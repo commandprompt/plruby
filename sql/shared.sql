@@ -1,0 +1,24 @@
+--
+-- $_SHARED: a Hash persisting across calls within a session.
+--
+CREATE FUNCTION set_shared(text, text) RETURNS void LANGUAGE plruby AS $$
+    $_SHARED[args[0]] = args[1]
+    nil
+$$;
+
+CREATE FUNCTION get_shared(text) RETURNS text LANGUAGE plruby AS $$
+    $_SHARED[args[0]]
+$$;
+
+SELECT set_shared('key', 'value');
+SELECT get_shared('key');
+SELECT get_shared('missing') IS NULL AS missing_is_null;
+
+-- Arbitrary Ruby objects survive between calls.
+CREATE FUNCTION push_shared(int) RETURNS int LANGUAGE plruby AS $$
+    ($_SHARED['list'] ||= []) << args[0]
+    $_SHARED['list'].length
+$$;
+SELECT push_shared(10);
+SELECT push_shared(20);
+SELECT push_shared(30);

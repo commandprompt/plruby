@@ -1,0 +1,49 @@
+--
+-- Database access via SPI.
+--
+CREATE TABLE spi_test (id int, name text);
+INSERT INTO spi_test VALUES (1, 'one'), (2, 'two'), (3, 'three');
+
+-- spi_exec + spi_fetch_row loop, with typed columns.
+CREATE FUNCTION sum_ids() RETURNS int LANGUAGE plruby AS $$
+    r = spi_exec("select id from spi_test order by id")
+    total = 0
+    while (row = spi_fetch_row(r)); total += row['id']; end
+    total
+$$;
+SELECT sum_ids();
+
+-- spi_processed / spi_status.
+CREATE FUNCTION spi_meta() RETURNS text LANGUAGE plruby AS $$
+    r = spi_exec("select * from spi_test")
+    "processed=#{spi_processed(r)} status=#{spi_status(r)}"
+$$;
+SELECT spi_meta();
+
+-- spi_rewind restarts iteration.
+CREATE FUNCTION spi_first_twice() RETURNS text LANGUAGE plruby AS $$
+    r = spi_exec("select name from spi_test order by id")
+    a = spi_fetch_row(r)['name']
+    spi_rewind(r)
+    b = spi_fetch_row(r)['name']
+    "#{a},#{b}"
+$$;
+SELECT spi_first_twice();
+
+-- spi_exec honors a row limit.
+CREATE FUNCTION spi_limited(int) RETURNS int LANGUAGE plruby AS $$
+    spi_processed(spi_exec("select * from spi_test", args[0]))
+$$;
+SELECT spi_limited(2);
+
+-- A failing query rolls back its subtransaction and re-raises.
+CREATE FUNCTION spi_bad() RETURNS int LANGUAGE plruby AS $$
+    spi_exec("select * from no_such_table")
+    1
+$$;
+SELECT spi_bad();
+
+-- The session is still usable afterwards.
+SELECT sum_ids();
+
+DROP TABLE spi_test;

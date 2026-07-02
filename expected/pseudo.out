@@ -1,0 +1,45 @@
+--
+-- Pseudotypes: record, anyelement, anyarray, void.
+--
+-- RETURNS record with a column definition list.
+CREATE FUNCTION as_record() RETURNS record LANGUAGE plruby AS $$
+    {'a' => 1, 'b' => 'two'}
+$$;
+SELECT * FROM as_record() AS (a int, b text);
+ a |  b  
+---+-----
+ 1 | two
+(1 row)
+
+-- A record function must return a Hash/Array.
+CREATE FUNCTION bad_record() RETURNS record LANGUAGE plruby AS $$
+    1
+$$;
+SELECT * FROM bad_record() AS (a int);
+ERROR:  function declared to return tuple must return an array or hash
+-- anyelement.
+CREATE FUNCTION identity(anyelement) RETURNS anyelement LANGUAGE plruby AS $$
+    args[0]
+$$;
+SELECT identity(42);
+ identity 
+----------
+       42
+(1 row)
+
+SELECT identity('hello'::text);
+ identity 
+----------
+ hello
+(1 row)
+
+-- void.
+CREATE FUNCTION returns_void() RETURNS void LANGUAGE plruby AS $$
+    42
+$$;
+SELECT returns_void();
+ returns_void 
+--------------
+ 
+(1 row)
+

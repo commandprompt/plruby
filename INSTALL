@@ -1,0 +1,53 @@
+PL/Ruby Installation
+====================
+
+PL/Ruby builds with PostgreSQL's extension build infrastructure (PGXS) and
+links against a shared-library Ruby (MRI).
+
+
+1. Prerequisites
+----------------
+
+  * PostgreSQL 11 or newer (tested on 11-18), including the server development
+    files that provide pg_config (Debian/Ubuntu: postgresql-server-dev-NN;
+    RPM: postgresqlNN-devel).
+
+  * Ruby 3.x built as a shared library (ENABLE_SHARED=yes) with development
+    headers.  On Debian/Ubuntu:
+
+        sudo apt-get install ruby-dev
+
+    Confirm the build is suitable with:
+
+        ruby -rrbconfig -e 'puts RbConfig::CONFIG["ENABLE_SHARED"]'   # must be "yes"
+
+  * A C compiler and GNU make.
+
+
+2. Build and install
+---------------------
+
+    make
+    sudo make install
+
+The Makefile locates PostgreSQL via pg_config and Ruby via the "ruby" on PATH.
+Override them if needed:
+
+    make PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config RUBY=/usr/bin/ruby
+    sudo make PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config install
+
+
+3. Enable the language in a database
+------------------------------------
+
+    CREATE EXTENSION plruby;
+
+PL/Ruby is an untrusted language, so the extension is superuser-only to install
+and only superusers can create PL/Ruby functions.  See the SECURITY section of
+README for why.
+
+
+4. Run the regression tests (optional)
+--------------------------------------
+
+    make installcheck

@@ -1,0 +1,28 @@
+--
+-- The validator rejects syntactically invalid function bodies at creation.
+--
+-- A syntax error is reported by CREATE FUNCTION.
+CREATE FUNCTION bad_syntax() RETURNS int LANGUAGE plruby AS $$
+    def (
+$$;
+ERROR:  function "bad_syntax" does not validate: eval:5: syntax error, unexpected `end'
+-- A well-formed body is accepted.
+CREATE FUNCTION good_syntax() RETURNS int LANGUAGE plruby AS $$
+    1 + 1
+$$;
+SELECT good_syntax();
+ good_syntax 
+-------------
+           2
+(1 row)
+
+-- Redefining a function recompiles it.
+CREATE OR REPLACE FUNCTION good_syntax() RETURNS int LANGUAGE plruby AS $$
+    2 + 2
+$$;
+SELECT good_syntax();
+ good_syntax 
+-------------
+           4
+(1 row)
+

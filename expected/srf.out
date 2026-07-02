@@ -1,0 +1,60 @@
+--
+-- Set-returning functions.
+--
+-- RETURNS SETOF scalar, return_next(value).
+CREATE FUNCTION evens(int) RETURNS SETOF int LANGUAGE plruby AS $$
+    (1..args[0]).each { |i| return_next(i * 2) }
+$$;
+SELECT * FROM evens(4);
+ evens 
+-------
+     2
+     4
+     6
+     8
+(4 rows)
+
+-- RETURNS TABLE with a no-argument return_next reading the column locals.
+CREATE FUNCTION squares(lim int) RETURNS TABLE(n int, square int)
+LANGUAGE plruby AS $$
+    (1..lim).each do |i|
+        n = i
+        square = i * i
+        return_next()
+    end
+$$;
+SELECT * FROM squares(3);
+ n | square 
+---+--------
+ 1 |      1
+ 2 |      4
+ 3 |      9
+(3 rows)
+
+-- An empty result set.
+SELECT count(*) FROM squares(0);
+ count 
+-------
+     0
+(1 row)
+
+-- RETURNS SETOF composite via a Hash per row.
+CREATE TYPE pair AS (k text, v int);
+CREATE FUNCTION pairs() RETURNS SETOF pair LANGUAGE plruby AS $$
+    return_next({'k' => 'a', 'v' => 1})
+    return_next({'k' => 'b', 'v' => 2})
+$$;
+SELECT * FROM pairs();
+ k | v 
+---+---
+ a | 1
+ b | 2
+(2 rows)
+
+-- return_next outside a set-returning function is an error.
+CREATE FUNCTION not_srf() RETURNS int LANGUAGE plruby AS $$
+    return_next(1)
+    1
+$$;
+SELECT not_srf();
+ERROR:  cannot use return_next in functions not declared to return a set

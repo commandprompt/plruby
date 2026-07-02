@@ -1,0 +1,8 @@
+# PGXS build artifacts
+*.o
+*.bc
+*.so
+results/
+regression.diffs
+regression.out
+*.diff
