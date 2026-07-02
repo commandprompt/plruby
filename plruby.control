@@ -1,4 +1,4 @@
-# PL/Ruby extension
+# PL/Ruby extension  (MIT License; see LICENSE)
 #
 # PL/Ruby is an UNTRUSTED language: Ruby has no sandbox on modern releases
 # ($SAFE and object tainting were removed in Ruby 3.0), so functions run with

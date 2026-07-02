@@ -6,8 +6,8 @@
  * follows the sibling PL/php handler; the Zend/PHP embed API is replaced
  * with Ruby's C API.
  *
- * This software is distributed under a permissive, PostgreSQL-style
- * license (see README).
+ * Copyright (c) 2026 ChronicallyJD.  Distributed under the MIT License;
+ * see the LICENSE file at the root of the source tree.
  **********************************************************************/
 
 #include "postgres.h"

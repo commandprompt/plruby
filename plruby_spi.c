@@ -5,6 +5,8 @@
  * This file grows feature by feature; the SPI query functions, prepared
  * statements, transaction control and subtransactions are added on top of
  * the setup and messaging helpers established here.
+ *
+ * Copyright (c) 2026 ChronicallyJD.  MIT License; see LICENSE.
  **********************************************************************/
 
 #include "postgres.h"

@@ -11,6 +11,9 @@
 
 #include <ruby.h>
 
+/* Build a Ruby String from PG text tagged with the database encoding. */
+extern VALUE plruby_str_from_pg(const char *str, long len);
+
 /*
  * Scalar leaf conversion: turn a C string (the text output of typeoid's output
  * function) into a native Ruby value -- Integer, Float, true/false, or String.

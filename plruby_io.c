@@ -4,6 +4,8 @@
  * Conversions between the PostgreSQL Datum representation and Ruby
  * VALUEs: scalars, (possibly nested) arrays, and composite/record
  * tuples, in both directions.
+ *
+ * Copyright (c) 2026 ChronicallyJD.  MIT License; see LICENSE.
  **********************************************************************/
 
 #include "postgres.h"
@@ -15,6 +17,7 @@
 #include "executor/spi.h"
 #include "funcapi.h"
 #include "lib/stringinfo.h"
+#include "mb/pg_wchar.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -25,6 +28,20 @@
 /* ---------------------------------------------------------------------
  * Scalar leaf conversion
  * ------------------------------------------------------------------- */
+
+/*
+ * Build a Ruby String from PostgreSQL text, tagged with a sensible encoding so
+ * that multibyte String operations (length, reverse, regexp, ...) behave.  For
+ * the common UTF-8 database we tag UTF-8; otherwise we fall back to ASCII-8BIT
+ * (binary), which is byte-preserving and never corrupts data.
+ */
+VALUE
+plruby_str_from_pg(const char *str, long len)
+{
+	if (GetDatabaseEncoding() == PG_UTF8)
+		return rb_utf8_str_new(str, len);
+	return rb_str_new(str, len);
+}
 
 VALUE
 plruby_scalar_from_cstring(const char *str, Oid typeoid)
@@ -43,7 +60,7 @@ plruby_scalar_from_cstring(const char *str, Oid typeoid)
 			return (str[0] == 't' || str[0] == 'T') ? Qtrue : Qfalse;
 		default:
 			/* numeric, text, varchar, everything else: keep as a String */
-			return rb_str_new_cstr(str);
+			return plruby_str_from_pg(str, strlen(str));
 	}
 }
 

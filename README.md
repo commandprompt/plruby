@@ -6,8 +6,8 @@
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-11_to_18-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-18_passing-brightgreen)](sql/)
-[![License](https://img.shields.io/badge/license-permissive-blue)](#license)
+[![Tests](https://img.shields.io/badge/tests-20_passing-brightgreen)](sql/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
 
@@ -130,10 +130,10 @@ to roles you would trust with the server's OS account.
 - [Language reference](doc/plruby.md)
 - [Installation](INSTALL)
 - [Changelog](CHANGELOG.md)
+- [Feature comparison: PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl](doc/comparison.md)
 - [PL/Ruby vs PL/Perl](doc/plperl-comparison.md)
 - [PL/Ruby vs PL/Tcl](doc/pltcl-comparison.md)
 
 ## License
 
-PL/Ruby is distributed under a permissive, PostgreSQL-style license — see the
-notice at the top of each source file.
+PL/Ruby is licensed under the **MIT License** — see [LICENSE](LICENSE).

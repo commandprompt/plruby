@@ -41,10 +41,19 @@ library, non-thread-safe embedding).
   output (`puts`, `print`) is forwarded to the server log.
 - **Session initialization** — module autoloading from a `plruby_modules` table
   and a `plruby.start_proc` configuration setting.
+- **UTF-8 string handling** — text from the database is tagged with the
+  database encoding (UTF-8 when the database is UTF-8), so multibyte Ruby String
+  operations (`length`, `reverse`, regexp, ...) behave correctly.
 - Packaging as a first-class extension (`CREATE EXTENSION plruby`) and a
-  regression suite of 18 tests covering every feature.
-- Documentation: a language reference (`doc/plruby.md`) and PL/Perl and PL/Tcl
-  feature comparisons.
+  regression suite of 20 tests covering every feature, including dedicated
+  type-mapping (`types`) and error-handling (`errors`) unit tests.
+- Documentation: a language reference (`doc/plruby.md`), a combined
+  PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl feature matrix (`doc/comparison.md`),
+  and the individual PL/Perl and PL/Tcl comparisons.
+
+### License
+
+- Released under the **MIT License** (see `LICENSE`).
 
 ### Security
 
