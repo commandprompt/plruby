@@ -1,3 +1,6 @@
+# Work handoff notes (local only)
+RESUME.md
+
 # PGXS build artifacts
 *.o
 *.bc
