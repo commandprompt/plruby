@@ -753,6 +753,8 @@ plruby_trig_build_args(FunctionCallInfo fcinfo)
 		rb_hash_aset(td, rb_str_new_cstr("when"), rb_str_new_cstr("BEFORE"));
 	else if (TRIGGER_FIRED_AFTER(tdata->tg_event))
 		rb_hash_aset(td, rb_str_new_cstr("when"), rb_str_new_cstr("AFTER"));
+	else if (TRIGGER_FIRED_INSTEAD(tdata->tg_event))
+		rb_hash_aset(td, rb_str_new_cstr("when"), rb_str_new_cstr("INSTEAD OF"));
 	else
 		elog(ERROR, "unknown firing time for trigger function");
 
@@ -792,7 +794,8 @@ plruby_trigger_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 				(errcode(ERRCODE_CONNECTION_DOES_NOT_EXIST),
 				 errmsg("could not disconnect from SPI manager")));
 
-	if (!TRIGGER_FIRED_BEFORE(trigdata->tg_event) ||
+	if ((!TRIGGER_FIRED_BEFORE(trigdata->tg_event) &&
+		 !TRIGGER_FIRED_INSTEAD(trigdata->tg_event)) ||
 		!TRIGGER_FIRED_FOR_ROW(trigdata->tg_event))
 		return (Datum) 0;		/* AFTER, or statement-level (incl. TRUNCATE):
 								 * the return value is ignored */
@@ -1127,7 +1130,18 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 				case PROARGMODE_TABLE:
 					break;
 				case PROARGMODE_VARIADIC:
-					elog(ERROR, "VARIADIC arguments are not supported");
+					/*
+					 * The caller folds a non-"any" variadic tail into a
+					 * single array argument, so it behaves exactly like an
+					 * IN argument of the array type.  VARIADIC "any" would
+					 * need per-call argument type discovery; keep rejecting
+					 * it.
+					 */
+					if (argtypes && argtypes[i] == ANYOID)
+						ereport(ERROR,
+								(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								 errmsg("VARIADIC \"any\" arguments are not supported")));
+					mode = PROARGMODE_IN;
 					break;
 				default:
 					elog(ERROR, "unsupported argument mode %c", mode);

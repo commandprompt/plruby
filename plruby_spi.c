@@ -680,6 +680,9 @@ plruby_cursor_do_close(plruby_cursor *c)
 		SPI_freeplan(c->plan);
 		c->plan = NULL;
 	}
+	/* Drop any buffered rows: a closed cursor must not keep yielding. */
+	c->buffer = Qnil;
+	c->pos = 0;
 }
 
 /*

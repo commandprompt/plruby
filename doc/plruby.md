@@ -150,6 +150,9 @@ PL/Ruby supports the full range of argument modes.
   after the argument. A single OUT argument becomes the scalar result; multiple
   OUT arguments become the result row.
 - **TABLE(...)** columns behave like OUT arguments for a set-returning function.
+- **VARIADIC** tails arrive as a single `Array` argument (the caller's extra
+  arguments are folded into it, exactly as SQL sees them). `VARIADIC "any"` is
+  not supported.
 - **Named** parameters are also available as local variables named after the
   argument, in addition to positional `args`.
 
@@ -200,7 +203,7 @@ involved are available in the `Hash` `$_TD`:
 | `$_TD['relid']`      | table OID                                         |
 | `$_TD['relname']`    | table name                                        |
 | `$_TD['schemaname']` | schema name                                       |
-| `$_TD['when']`       | `BEFORE` or `AFTER`                               |
+| `$_TD['when']`       | `BEFORE`, `AFTER`, or `INSTEAD OF`                |
 | `$_TD['level']`      | `ROW` or `STATEMENT`                              |
 | `$_TD['event']`      | `INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE`       |
 | `$_TD['new']`        | new row (INSERT/UPDATE), as a `Hash`              |
@@ -208,7 +211,7 @@ involved are available in the `Hash` `$_TD`:
 | `$_TD['argc']`       | number of trigger arguments                       |
 | `$_TD['args']`       | trigger arguments, as an `Array`                  |
 
-Return value of a **BEFORE ... FOR EACH ROW** trigger:
+Return value of a **BEFORE** or **INSTEAD OF** ... **FOR EACH ROW** trigger:
 
 - `nil` — proceed with the operation using the unmodified row.
 - `'SKIP'` — silently skip the operation for this row.
@@ -229,6 +232,12 @@ $$;
 Statement-level `TRUNCATE` triggers are also supported: `$_TD['event']` is
 `TRUNCATE`, `$_TD['level']` is `STATEMENT`, there is no row, and the return
 value is ignored.
+
+`INSTEAD OF` triggers on views work like BEFORE row triggers: the function
+performs the real operation itself (typically with `spi_exec` against the base
+tables) and returns `nil` to report the row as processed, or `'SKIP'` to
+suppress it. `WHEN (...)` conditions and deferrable constraint triggers behave
+as they do for any trigger function.
 
 ## Event trigger functions
 
@@ -280,7 +289,8 @@ holding it all in memory, use a cursor:
   `PLRuby::Cursor`.
 - `spi_fetchrow(cursor)` — the next row as a `Hash`, or `nil` at end of result.
 - `spi_cursor_close(cursor)` — close a cursor early (otherwise it closes when
-  exhausted or when the function returns).
+  exhausted or when the function returns). After closing, `spi_fetchrow`
+  returns `nil` and closing again is a no-op.
 - `PLRuby::Cursor` is `Enumerable` (via `#each`), so `map`, `select`, etc. work.
 
 ```sql

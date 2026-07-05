@@ -747,8 +747,8 @@ plruby_modify_tuple(VALUE td, TriggerData *tdata)
 	TupleDesc	tupdesc;
 	HeapTuple	rettuple;
 	VALUE		newtup;
-	AttInMetadata *attinmeta;
-	char	  **vals;
+	Datum	   *dvalues;
+	bool	   *nulls;
 	int			i;
 	MemoryContext tmpcxt,
 				oldcxt;
@@ -766,9 +766,11 @@ plruby_modify_tuple(VALUE td, TriggerData *tdata)
 	oldcxt = MemoryContextSwitchTo(tmpcxt);
 
 	tupdesc = tdata->tg_relation->rd_att;
-	attinmeta = TupleDescGetAttInMetadata(tupdesc);
 
-	vals = (char **) palloc0(tupdesc->natts * sizeof(char *));
+	dvalues = (Datum *) palloc0(tupdesc->natts * sizeof(Datum));
+	nulls = (bool *) palloc(tupdesc->natts * sizeof(bool));
+	for (i = 0; i < tupdesc->natts; i++)
+		nulls[i] = true;
 
 	for (i = 0; i < tupdesc->natts; i++)
 	{
@@ -784,11 +786,12 @@ plruby_modify_tuple(VALUE td, TriggerData *tdata)
 		if (el == Qundef)
 			elog(ERROR, "$_TD['new'] does not contain attribute \"%s\"", attname);
 
-		vals[i] = plruby_value_to_cstring(el, true, true);
+		dvalues[i] = plruby_datum_from_value(el, att->atttypid,
+											 att->atttypmod, &nulls[i]);
 	}
 
 	MemoryContextSwitchTo(oldcxt);
-	rettuple = BuildTupleFromCStrings(attinmeta, vals);
+	rettuple = heap_form_tuple(tupdesc, dvalues, nulls);
 	MemoryContextDelete(tmpcxt);
 
 	return rettuple;

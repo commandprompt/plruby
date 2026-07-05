@@ -1,0 +1,62 @@
+--
+-- json / jsonb: both arrive as Ruby Strings holding the JSON text; Ruby's
+-- stdlib json parses and generates them.  Returning a String into a
+-- json/jsonb result converts through the type's input function.
+--
+
+-- jsonb arrives as a String in jsonb's canonical text form.
+CREATE FUNCTION jb_class(jsonb) RETURNS text LANGUAGE plruby AS $$
+    "#{args[0].class.name}: #{args[0]}"
+$$;
+SELECT jb_class('{"b":1, "a": [true, null, 2]}');
+
+-- Parse and extract.
+CREATE FUNCTION jb_get(jsonb, text) RETURNS text LANGUAGE plruby AS $$
+    require 'json'
+    JSON.parse(args[0])[args[1]].to_s
+$$;
+SELECT jb_get('{"name": "widget", "qty": 7}', 'name');
+SELECT jb_get('{"name": "widget", "qty": 7}', 'qty');
+
+-- Recursive work over a document: sum every number anywhere in it.
+CREATE FUNCTION jb_sum_numbers(jsonb) RETURNS numeric LANGUAGE plruby AS $$
+    require 'json'
+    walk = lambda { |v|
+        case v
+        when Numeric then v
+        when Array   then v.sum { |e| walk.call(e) }
+        when Hash    then v.values.sum { |e| walk.call(e) }
+        else 0
+        end
+    }
+    walk.call(JSON.parse(args[0])).to_s
+$$;
+SELECT jb_sum_numbers('{"a": 1, "b": [2, {"c": 3.5}], "d": "x", "e": null}');
+
+-- Build a jsonb value from Ruby data; usable with jsonb operators.
+CREATE FUNCTION jb_build(int) RETURNS jsonb LANGUAGE plruby AS $$
+    require 'json'
+    JSON.generate({'n' => args[0], 'squares' => (1..args[0]).map { |i| i * i }})
+$$;
+SELECT jb_build(3);
+SELECT jb_build(4)->>'n' AS n, jsonb_array_length(jb_build(4)->'squares') AS len;
+
+-- A jsonb array unnested into a set of rows.
+CREATE FUNCTION jb_names(jsonb) RETURNS SETOF text LANGUAGE plruby AS $$
+    require 'json'
+    JSON.parse(args[0]).each { |e| return_next e['name'] }
+    nil
+$$;
+SELECT * FROM jb_names('[{"name": "a"}, {"name": "b"}, {"name": "c"}]');
+
+-- Plain json (not jsonb) preserves its original text verbatim.
+CREATE FUNCTION j_echo(json) RETURNS text LANGUAGE plruby AS $$
+    args[0]
+$$;
+SELECT j_echo('{"kept":   "as-is", "dup": 1, "dup": 2}');
+
+-- Returning malformed JSON into a jsonb result is rejected cleanly.
+CREATE FUNCTION jb_bad() RETURNS jsonb LANGUAGE plruby AS $$
+    '{"unterminated": '
+$$;
+SELECT jb_bad();

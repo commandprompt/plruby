@@ -27,6 +27,19 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 - **`PLRuby::Error#sqlstate`** — a caught PostgreSQL error now carries its
   five-character `SQLSTATE` (e.g. `42P01`, `22012`) on the Ruby exception; it
   is `nil` on a PL/Ruby error not backed by a database error.
+- **`VARIADIC` arguments** — the variadic tail arrives as a single Ruby
+  `Array` argument (`VARIADIC "any"` remains unsupported).
+- **`INSTEAD OF` triggers** on views — `$_TD['when']` is `INSTEAD OF`, with
+  the same `nil`/`'SKIP'`/`'MODIFY'` return handling as BEFORE row triggers.
+- **Cookbook** — `doc/cookbook.md`, practical recipes built on Ruby's stdlib
+  (JSON reshaping, HMAC/PBKDF2, audit trigger, CSV, Zlib-to-bytea, BigDecimal,
+  slugify, ERB, streaming scans, batch commits); every recipe in the "tested"
+  section runs verbatim in the regression suite (`cookbook` test).
+- **Regression suite 28 → 35 tests**, adding `datetime` (date/time/timestamp/
+  interval), `jsonb`, `misc` (uuid/inet/enum/domain), `variadic`, `trigger2`
+  (INSTEAD OF, `WHEN` clauses, deferred constraint triggers, composite-column
+  `'MODIFY'`), `hostile` (mid-SRF errors, cursor misuse, ~1MB TOAST values,
+  prepared-plan edge cases), and `cookbook`.
 
 ### Fixed
 
@@ -38,6 +51,11 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
   statement-level, return value ignored.
 - **`spi_freeplan`** now invalidates the plan handle; reusing a freed plan
   raises a clear PL/Ruby error instead of silently failing.
+- **Trigger `'MODIFY'` with composite columns** — the modified-tuple path is
+  now datum-based, so assigning a `Hash` to a composite-typed field of
+  `$_TD['new']` works (it previously failed with "malformed record literal").
+- **`spi_fetchrow` after `spi_cursor_close`** now returns `nil`; previously it
+  could keep returning rows left in the cursor's prefetch buffer.
 
 ### Known limitations
 

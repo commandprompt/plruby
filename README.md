@@ -50,7 +50,8 @@ SELECT hello('world');   -- Hello, world!
 | 🧰 **Utilities** | `quote_literal` / `quote_nullable` / `quote_ident`, `elog`, `$_SHARED`. |
 | 📦 **Session setup** | Anonymous `DO` blocks, `plruby_modules` autoloading, and a `plruby.start_proc` hook. |
 
-See the [**language reference**](doc/plruby.md) for the full API, and the
+See the [**language reference**](doc/plruby.md) for the full API, the
+[**cookbook**](doc/cookbook.md) for practical tested recipes, and the
 [PL/Perl](doc/plperl-comparison.md) and [PL/Tcl](doc/pltcl-comparison.md)
 comparisons for feature-by-feature detail.
 
@@ -129,6 +130,7 @@ to roles you would trust with the server's OS account.
 ## Documentation
 
 - [Language reference](doc/plruby.md)
+- [Cookbook: practical tested recipes](doc/cookbook.md)
 - [Installation](INSTALL)
 - [Changelog](CHANGELOG.md)
 - [Feature comparison: PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl](doc/comparison.md)
