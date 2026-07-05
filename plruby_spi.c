@@ -89,6 +89,31 @@ static const char *plruby_output_ruby =
 "  OUT = Output.new\n"
 "end\n";
 
+/*
+ * The block form of spi_query and Cursor#each are layered in Ruby on top of the
+ * C primitives (__spi_query / spi_fetchrow / spi_cursor_close): the per-row loop
+ * runs at the Ruby level, and the cursor is always closed via ensure.
+ */
+static const char *plruby_spi_prelude =
+"def spi_query(sql, &blk)\n"
+"  cur = __spi_query(sql)\n"
+"  return cur unless blk\n"
+"  begin\n"
+"    while (row = spi_fetchrow(cur)); blk.call(row); end\n"
+"  ensure\n"
+"    spi_cursor_close(cur)\n"
+"  end\n"
+"  nil\n"
+"end\n"
+"class PLRuby::Cursor\n"
+"  include Enumerable\n"
+"  def each\n"
+"    return enum_for(:each) unless block_given?\n"
+"    while (row = spi_fetchrow(self)); yield row; end\n"
+"    self\n"
+"  end\n"
+"end\n";
+
 /* ---------------------------------------------------------------------
  * Messaging: elog / pg_raise
  * ------------------------------------------------------------------- */
@@ -567,6 +592,239 @@ plruby_spi_freeplan(VALUE self, VALUE planobj)
 }
 
 /* ---------------------------------------------------------------------
+ * Cursor streaming: spi_query opens a portal, spi_fetchrow reads one row at a
+ * time, so large result sets are consumed without materializing them all.
+ * ------------------------------------------------------------------- */
+
+/*
+ * Rows are fetched from the portal a batch at a time and buffered as a Ruby
+ * Array, so streaming a large result never materializes it all at once.
+ */
+#define PLRUBY_CURSOR_BATCH 256
+
+typedef struct
+{
+	Portal		portal;			/* NULL once closed or exhausted */
+	SPIPlanPtr	plan;			/* saved plan backing the portal, freed on close */
+	VALUE		buffer;			/* Ruby Array of buffered row Hashes, or Qnil */
+	long		pos;			/* next index into buffer */
+} plruby_cursor;
+
+static void
+cursor_mark(void *p)
+{
+	plruby_cursor *c = p;
+
+	if (c != NULL)
+		rb_gc_mark(c->buffer);
+}
+
+/*
+ * Portals are closed by SPI_finish / transaction end, and by GC time SPI may be
+ * gone, so the finalizer only frees the wrapper struct.
+ */
+static void
+cursor_free(void *p)
+{
+	ruby_xfree(p);
+}
+
+static const rb_data_type_t plruby_cursor_type = {
+	"PLRuby::Cursor",
+	{cursor_mark, cursor_free, NULL},
+	NULL, NULL,
+	RUBY_TYPED_FREE_IMMEDIATELY
+};
+
+static VALUE cCursor;
+
+static plruby_cursor *
+plruby_get_cursor(VALUE v)
+{
+	plruby_cursor *c;
+
+	if (!rb_typeddata_is_kind_of(v, &plruby_cursor_type))
+		rb_raise(rb_ePLRubyError, "expected a cursor from spi_query");
+	TypedData_Get_Struct(v, plruby_cursor, &plruby_cursor_type, c);
+	return c;
+}
+
+static void
+plruby_cursor_do_close(plruby_cursor *c)
+{
+	if (c->portal != NULL)
+	{
+		SPI_cursor_close(c->portal);
+		c->portal = NULL;
+	}
+	if (c->plan != NULL)
+	{
+		SPI_freeplan(c->plan);
+		c->plan = NULL;
+	}
+}
+
+/*
+ * Refill the cursor's row buffer with the next batch of up to
+ * PLRUBY_CURSOR_BATCH rows, freeing the tuple table afterward so streaming
+ * memory stays bounded.  Returns false at end of result (closing the cursor).
+ */
+static bool
+plruby_cursor_refill(plruby_cursor *c)
+{
+	VALUE		batch = Qnil;
+	MemoryContext oldcontext = CurrentMemoryContext;
+
+	if (c->portal == NULL)
+		return false;
+
+	/*
+	 * Fetch the next batch directly on the portal (no per-fetch subtransaction:
+	 * running a continuing portal under a subtransaction that is then released
+	 * corrupts the portal).  A query error therefore propagates as a Ruby
+	 * exception but is terminal for the surrounding statement, like a PL/pgSQL
+	 * cursor loop.
+	 */
+	PG_TRY();
+	{
+		SPI_cursor_fetch(c->portal, true, PLRUBY_CURSOR_BATCH);
+	}
+	PG_CATCH();
+	{
+		ErrorData  *edata;
+
+		MemoryContextSwitchTo(oldcontext);
+		edata = CopyErrorData();
+		FlushErrorState();
+		plruby_cursor_do_close(c);
+		rb_raise(rb_ePLRubyError, "%s", edata->message);
+	}
+	PG_END_TRY();
+
+	if (SPI_processed > 0 && SPI_tuptable != NULL)
+	{
+		uint64		i;
+
+		/* batch is a C-stack local, protected from GC while we build it */
+		batch = rb_ary_new_capa(SPI_processed);
+		for (i = 0; i < SPI_processed; i++)
+			rb_ary_push(batch,
+						plruby_hash_from_tuple(SPI_tuptable->vals[i],
+											   SPI_tuptable->tupdesc));
+	}
+
+	/* Free the batch's tuple table so a long stream does not accumulate them. */
+	if (SPI_tuptable != NULL)
+		SPI_freetuptable(SPI_tuptable);
+
+	if (NIL_P(batch))
+	{
+		plruby_cursor_do_close(c);
+		c->buffer = Qnil;
+		c->pos = 0;
+		return false;
+	}
+
+	c->buffer = batch;
+	c->pos = 0;
+	return true;
+}
+
+/*
+ * Fetch the next row as a Hash, or nil at end of result.  Serves rows from the
+ * buffer, refilling from the portal a batch at a time.
+ */
+static VALUE
+plruby_cursor_fetch_one(plruby_cursor *c)
+{
+	if (NIL_P(c->buffer) || c->pos >= RARRAY_LEN(c->buffer))
+	{
+		if (!plruby_cursor_refill(c))
+			return Qnil;
+	}
+	return rb_ary_entry(c->buffer, c->pos++);
+}
+
+/*
+ * __spi_query(sql) -> a cursor over the query.  The block form of the public
+ * spi_query is layered on top of this in Ruby (see plruby_spi_prelude), so the
+ * per-row iteration runs at the Ruby level rather than through a C rb_yield
+ * loop across fetches.
+ */
+static VALUE
+plruby_spi_query(int argc, VALUE *argv, VALUE self)
+{
+	char	   *query;
+	SPIPlanPtr	plan;
+	Portal		portal;
+	plruby_cursor *c;
+	VALUE		obj;
+	MemoryContext oldcontext = CurrentMemoryContext;
+
+	if (argc != 1)
+		rb_raise(rb_ePLRubyError, "spi_query: expected 1 argument (query text)");
+	query = plruby_str_arg(argv[0]);
+
+	/*
+	 * Open the portal at the function's transaction level (no subtransaction):
+	 * a portal created inside a subtransaction that is then released loses its
+	 * ownership and crashes on a continuation fetch.  Rows are fetched in
+	 * per-batch subtransactions (see plruby_cursor_refill).
+	 */
+	PG_TRY();
+	{
+		plan = SPI_prepare(query, 0, NULL);
+		if (plan == NULL)
+			elog(ERROR, "spi_query: SPI_prepare failed: %s",
+				 SPI_result_code_string(SPI_result));
+		/*
+		 * Save the plan: an unsaved SPI_prepare plan can be released after the
+		 * first fetch, leaving the portal referencing freed memory on the next
+		 * one.  It is freed when the cursor closes.
+		 */
+		if (SPI_keepplan(plan) != 0)
+			elog(ERROR, "spi_query: SPI_keepplan failed");
+		portal = SPI_cursor_open(NULL, plan, NULL, NULL, true);
+		if (portal == NULL)
+			elog(ERROR, "spi_query: could not open cursor");
+	}
+	PG_CATCH();
+	{
+		ErrorData  *edata;
+
+		MemoryContextSwitchTo(oldcontext);
+		edata = CopyErrorData();
+		FlushErrorState();
+		pfree(query);
+		rb_raise(rb_ePLRubyError, "%s", edata->message);
+	}
+	PG_END_TRY();
+	pfree(query);
+
+	obj = TypedData_Make_Struct(cCursor, plruby_cursor,
+								&plruby_cursor_type, c);
+	c->portal = portal;
+	c->plan = plan;
+	c->buffer = Qnil;
+	c->pos = 0;
+
+	return obj;
+}
+
+static VALUE
+plruby_spi_fetchrow(VALUE self, VALUE cur)
+{
+	return plruby_cursor_fetch_one(plruby_get_cursor(cur));
+}
+
+static VALUE
+plruby_spi_cursor_close(VALUE self, VALUE cur)
+{
+	plruby_cursor_do_close(plruby_get_cursor(cur));
+	return Qnil;
+}
+
+/* ---------------------------------------------------------------------
  * Transaction control (procedures called with CALL, non-atomic context)
  * ------------------------------------------------------------------- */
 
@@ -780,6 +1038,9 @@ plruby_spi_init(void)
 	cSPIPlan = rb_define_class_under(rb_mPLRuby, "SPIPlan", rb_cObject);
 	rb_undef_alloc_func(cSPIPlan);
 	rb_gc_register_address(&cSPIPlan);
+	cCursor = rb_define_class_under(rb_mPLRuby, "Cursor", rb_cObject);
+	rb_undef_alloc_func(cCursor);
+	rb_gc_register_address(&cCursor);
 
 	/* $_SHARED: a Hash that persists across calls within a session */
 	rb_gv_set("$_SHARED", rb_hash_new());
@@ -824,6 +1085,14 @@ plruby_spi_init(void)
 	rb_define_global_function("spi_rewind",
 							  RUBY_METHOD_FUNC(plruby_spi_rewind), 1);
 
+	/* Cursor streaming (block form + Cursor#each layered in the prelude below) */
+	rb_define_global_function("__spi_query",
+							  RUBY_METHOD_FUNC(plruby_spi_query), -1);
+	rb_define_global_function("spi_fetchrow",
+							  RUBY_METHOD_FUNC(plruby_spi_fetchrow), 1);
+	rb_define_global_function("spi_cursor_close",
+							  RUBY_METHOD_FUNC(plruby_spi_cursor_close), 1);
+
 	/* Prepared statements */
 	rb_define_global_function("spi_prepare",
 							  RUBY_METHOD_FUNC(plruby_spi_prepare), -1);
@@ -841,4 +1110,7 @@ plruby_spi_init(void)
 							  RUBY_METHOD_FUNC(plruby_spi_rollback), 0);
 	rb_define_global_function("subtransaction",
 							  RUBY_METHOD_FUNC(plruby_subtransaction), -1);
+
+	/* Ruby-level layer for the cursor block form and Cursor#each */
+	plruby_eval_string(plruby_spi_prelude, "plruby spi prelude");
 }

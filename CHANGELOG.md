@@ -17,6 +17,14 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
   reuse, standard-library `require`, `$stdout`/`$stderr` redirection, quoting
   helpers, and `plruby.start_proc`.
 
+- **Cursor streaming** — `spi_query(sql)` opens a portal and reads rows a batch
+  at a time, so large results stream without materializing. Block form
+  (`spi_query(sql) { |row| … }`), handle form (`spi_fetchrow` /
+  `spi_cursor_close`), and `PLRuby::Cursor#each` (Enumerable).
+- **Broader string encoding** — text is tagged with the Ruby encoding matching
+  the database encoding (LATIN*, WIN*, EUC*, SJIS, KOI8, Big5, GBK, …), not just
+  UTF-8; unmapped encodings fall back to ASCII-8BIT.
+
 ### Fixed
 
 - **Nested composites** are now built and read recursively: a composite field

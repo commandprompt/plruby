@@ -34,7 +34,7 @@ PG_CPPFLAGS = -I$(RUBY_ARCHHDRDIR) -I$(RUBY_HDRDIR)
 SHLIB_LINK = -L$(RUBY_LIBDIR) -L$(RUBY_ARCHLIBDIR) $(RUBY_LIBARG) $(RUBY_LIBS)
 
 # Regression tests.  "init" installs the extension; keep it first.
-REGRESS = init base types numspecial bytea composite shared trigger spi raise errors sqlstate cargs pseudo srf out varnames validator prepare compat txn evttrig subxact modules quote require stdio startproc
+REGRESS = init base types numspecial bytea composite encoding shared trigger spi raise errors sqlstate cargs pseudo srf out varnames validator prepare cursor compat txn evttrig subxact modules quote require stdio startproc
 
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)

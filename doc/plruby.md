@@ -100,6 +100,13 @@ $$;
 SELECT an_array();   -- {{1,3,5},{2,4,6}}
 ```
 
+Strings arrive tagged with the Ruby encoding that matches the database encoding
+(`UTF8` → `UTF-8`, `LATIN1` → `ISO-8859-1`, `EUC_JP` → `EUC-JP`, `WIN1251` →
+`Windows-1251`, and so on), so `length`, `reverse`, and regexps operate on
+characters, not bytes. Encodings Ruby does not recognize fall back to
+`ASCII-8BIT` (binary), which is byte-preserving. `bytea` is passed as its
+textual `\x…` hex representation (a `String`), not raw bytes.
+
 ## Composite types and records
 
 A composite argument arrives as a `Hash` keyed by column name (string keys); a
@@ -264,6 +271,29 @@ CREATE FUNCTION sum_series(n integer) RETURNS integer LANGUAGE plruby AS $$
     total
 $$;
 ```
+
+`spi_exec` materializes the whole result. To stream a large result without
+holding it all in memory, use a cursor:
+
+- `spi_query(query)` — open a cursor over `query`. With a block it yields each
+  row `Hash` and closes the cursor automatically; without a block it returns a
+  `PLRuby::Cursor`.
+- `spi_fetchrow(cursor)` — the next row as a `Hash`, or `nil` at end of result.
+- `spi_cursor_close(cursor)` — close a cursor early (otherwise it closes when
+  exhausted or when the function returns).
+- `PLRuby::Cursor` is `Enumerable` (via `#each`), so `map`, `select`, etc. work.
+
+```sql
+CREATE FUNCTION big_total() RETURNS bigint LANGUAGE plruby AS $$
+    total = 0
+    spi_query("select n from huge_table") { |row| total += row['n'] }
+    total
+$$;
+```
+
+Rows are read from the portal in batches, so memory stays bounded no matter how
+large the result. A query error during streaming is raised as a Ruby exception
+but is terminal for the surrounding statement (like a PL/pgSQL cursor loop).
 
 ## Prepared statements
 

@@ -26,22 +26,94 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+#include <ruby/encoding.h>
+
 /* ---------------------------------------------------------------------
  * Scalar leaf conversion
  * ------------------------------------------------------------------- */
 
 /*
- * Build a Ruby String from PostgreSQL text, tagged with a sensible encoding so
- * that multibyte String operations (length, reverse, regexp, ...) behave.  For
- * the common UTF-8 database we tag UTF-8; otherwise we fall back to ASCII-8BIT
- * (binary), which is byte-preserving and never corrupts data.
+ * Map the current database encoding to the equivalent Ruby encoding name, or
+ * NULL if there is no good match (SQL_ASCII, MULE_INTERNAL, ...), in which case
+ * the caller falls back to ASCII-8BIT (binary), which is byte-preserving.
+ */
+static const char *
+plruby_pg_to_ruby_encname(int pgenc)
+{
+	switch (pgenc)
+	{
+		case PG_UTF8:			return "UTF-8";
+		case PG_LATIN1:			return "ISO-8859-1";
+		case PG_LATIN2:			return "ISO-8859-2";
+		case PG_LATIN3:			return "ISO-8859-3";
+		case PG_LATIN4:			return "ISO-8859-4";
+		case PG_LATIN5:			return "ISO-8859-9";
+		case PG_LATIN6:			return "ISO-8859-10";
+		case PG_LATIN7:			return "ISO-8859-13";
+		case PG_LATIN8:			return "ISO-8859-14";
+		case PG_LATIN9:			return "ISO-8859-15";
+		case PG_LATIN10:		return "ISO-8859-16";
+		case PG_WIN1250:		return "Windows-1250";
+		case PG_WIN1251:		return "Windows-1251";
+		case PG_WIN1252:		return "Windows-1252";
+		case PG_WIN1253:		return "Windows-1253";
+		case PG_WIN1254:		return "Windows-1254";
+		case PG_WIN1255:		return "Windows-1255";
+		case PG_WIN1256:		return "Windows-1256";
+		case PG_WIN1257:		return "Windows-1257";
+		case PG_WIN1258:		return "Windows-1258";
+		case PG_WIN866:			return "IBM866";
+		case PG_WIN874:			return "Windows-874";
+		case PG_KOI8R:			return "KOI8-R";
+		case PG_KOI8U:			return "KOI8-U";
+		case PG_EUC_JP:			return "EUC-JP";
+		case PG_EUC_CN:			return "GB2312";
+		case PG_EUC_KR:			return "EUC-KR";
+		case PG_EUC_TW:			return "EUC-TW";
+		case PG_EUC_JIS_2004:	return "EUC-JP";
+		case PG_SJIS:			return "Windows-31J";
+		case PG_SHIFT_JIS_2004:	return "Shift_JIS";
+		case PG_BIG5:			return "Big5";
+		case PG_GBK:			return "GBK";
+		case PG_UHC:			return "CP949";
+		case PG_GB18030:		return "GB18030";
+		default:				return NULL;
+	}
+}
+
+/*
+ * The Ruby encoding matching the database encoding, resolved once per backend
+ * (the database encoding is fixed for the life of the connection).  Encodings
+ * Ruby does not know fall back to ASCII-8BIT.
+ */
+static rb_encoding *
+plruby_db_ruby_encoding(void)
+{
+	static int	cached_pgenc = -1;
+	static rb_encoding *cached = NULL;
+	int			pgenc = GetDatabaseEncoding();
+
+	if (pgenc != cached_pgenc)
+	{
+		const char *name = plruby_pg_to_ruby_encname(pgenc);
+		int			idx = (name != NULL) ? rb_enc_find_index(name) : -1;
+
+		cached = (idx >= 0) ? rb_enc_from_index(idx) : rb_ascii8bit_encoding();
+		cached_pgenc = pgenc;
+	}
+	return cached;
+}
+
+/*
+ * Build a Ruby String from PostgreSQL text, tagged with the Ruby encoding that
+ * matches the database encoding, so multibyte String operations (length,
+ * reverse, regexp, ...) behave.  Unknown encodings become ASCII-8BIT (binary),
+ * which is byte-preserving and never corrupts data.
  */
 VALUE
 plruby_str_from_pg(const char *str, long len)
 {
-	if (GetDatabaseEncoding() == PG_UTF8)
-		return rb_utf8_str_new(str, len);
-	return rb_str_new(str, len);
+	return rb_enc_str_new(str, len, plruby_db_ruby_encoding());
 }
 
 VALUE

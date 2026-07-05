@@ -44,6 +44,7 @@ SELECT hello('world');   -- Hello, world!
 | ⚡ **Triggers** | Row & statement triggers via `$_TD` (with `'SKIP'` / `'MODIFY'`). |
 | 📣 **Event triggers** | Back `CREATE EVENT TRIGGER` with `RETURNS event_trigger`. |
 | 🗄️ **Database access (SPI)** | `spi_exec`, `spi_fetch_row`, `spi_processed`, `spi_status`, `spi_rewind`. |
+| 🌊 **Cursor streaming** | `spi_query` (block or handle), `spi_fetchrow`, `spi_cursor_close`, `Cursor#each` — consume huge results without materializing them. |
 | 📝 **Prepared statements** | `spi_prepare` / `spi_exec_prepared` / `spi_query_prepared` / `spi_freeplan`. |
 | 🔐 **Transaction control** | `spi_commit` / `spi_rollback` in procedures, plus `subtransaction` blocks. |
 | 🧰 **Utilities** | `quote_literal` / `quote_nullable` / `quote_ident`, `elog`, `$_SHARED`. |
