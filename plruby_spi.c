@@ -32,6 +32,24 @@ MemoryContext current_memcxt = NULL;
 Tuplestorestate *current_tuplestore = NULL;
 VALUE		current_srf_binding = Qnil;
 
+/*
+ * Raise PLRuby::Error for a PostgreSQL error captured via CopyErrorData(),
+ * attaching the five-character SQLSTATE as @sqlstate.  Does not return.
+ */
+static void
+plruby_raise_pg_error(ErrorData *edata)
+{
+	VALUE		exc;
+
+	exc = rb_exc_new_str(rb_ePLRubyError,
+						 plruby_str_from_pg(edata->message,
+											strlen(edata->message)));
+	rb_ivar_set(exc, rb_intern("@sqlstate"),
+				rb_str_new_cstr(unpack_sql_state(edata->sqlerrcode)));
+	FreeErrorData(edata);
+	rb_exc_raise(exc);
+}
+
 /* ---------------------------------------------------------------------
  * Output redirection: Ruby's $stdout/$stderr forwarded to the PG log.
  * ------------------------------------------------------------------- */
@@ -326,7 +344,7 @@ plruby_spi_exec(int argc, VALUE *argv, VALUE self)
 		RollbackAndReleaseCurrentSubTransaction();
 		MemoryContextSwitchTo(oldcontext);
 		CurrentResourceOwner = oldowner;
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 
@@ -485,7 +503,7 @@ plruby_spi_prepare(int argc, VALUE *argv, VALUE self)
 		free(argtypes);
 		free(typinput);
 		free(typioparam);
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 
@@ -571,7 +589,7 @@ plruby_spi_exec_prepared(int argc, VALUE *argv, VALUE self)
 		RollbackAndReleaseCurrentSubTransaction();
 		MemoryContextSwitchTo(oldcontext);
 		CurrentResourceOwner = oldowner;
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 
@@ -697,7 +715,7 @@ plruby_cursor_refill(plruby_cursor *c)
 		edata = CopyErrorData();
 		FlushErrorState();
 		plruby_cursor_do_close(c);
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 
@@ -796,7 +814,7 @@ plruby_spi_query(int argc, VALUE *argv, VALUE self)
 		edata = CopyErrorData();
 		FlushErrorState();
 		pfree(query);
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 	pfree(query);
@@ -847,7 +865,7 @@ plruby_spi_commit(VALUE self)
 		MemoryContextSwitchTo(oldcontext);
 		edata = CopyErrorData();
 		FlushErrorState();
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 	return Qnil;
@@ -872,7 +890,7 @@ plruby_spi_rollback(VALUE self)
 		MemoryContextSwitchTo(oldcontext);
 		edata = CopyErrorData();
 		FlushErrorState();
-		rb_raise(rb_ePLRubyError, "%s", edata->message);
+		plruby_raise_pg_error(edata);
 	}
 	PG_END_TRY();
 	return Qnil;

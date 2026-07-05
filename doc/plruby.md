@@ -459,6 +459,26 @@ method or a `TypeError`) is reported as a PostgreSQL `ERROR`, aborting the
 statement. You can raise an error yourself with `raise`, `elog('ERROR', ...)`,
 or `pg_raise('error', ...)`.
 
+A database error raised through the SPI functions (a failed `spi_exec`, a
+constraint violation, and so on) arrives as a rescuable `PLRuby::Error`. The
+exception's message is the PostgreSQL error message, and its **`sqlstate`**
+method returns the original five-character `SQLSTATE` code:
+
+```sql
+CREATE FUNCTION divide(int, int) RETURNS text LANGUAGE plruby AS $$
+    begin
+        spi_exec("select #{args[0]} / #{args[1]}")
+        'ok'
+    rescue PLRuby::Error => e
+        e.sqlstate == '22012' ? 'division by zero' : "failed: #{e.sqlstate}"
+    end
+$$;
+```
+
+`sqlstate` is `nil` on a `PLRuby::Error` that does not originate from a
+database error (for example one raised by `elog('ERROR', ...)`); ordinary Ruby
+exceptions do not have the method at all.
+
 ## Security
 
 PL/Ruby is an **untrusted** language. Historically a trusted variant could

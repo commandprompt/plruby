@@ -24,6 +24,9 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 - **Broader string encoding** — text is tagged with the Ruby encoding matching
   the database encoding (LATIN*, WIN*, EUC*, SJIS, KOI8, Big5, GBK, …), not just
   UTF-8; unmapped encodings fall back to ASCII-8BIT.
+- **`PLRuby::Error#sqlstate`** — a caught PostgreSQL error now carries its
+  five-character `SQLSTATE` (e.g. `42P01`, `22012`) on the Ruby exception; it
+  is `nil` on a PL/Ruby error not backed by a database error.
 
 ### Fixed
 
@@ -38,8 +41,6 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Known limitations
 
-- A caught PostgreSQL error surfaces only its message to Ruby; the original
-  `SQLSTATE` is not exposed on the exception object.
 - A function body compiles to a method, so a `class`/`module` definition cannot
   appear inline in the body (use a `plruby_modules` module instead).
 

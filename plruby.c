@@ -283,7 +283,8 @@ plruby_init(void)
 		plruby_vm_inited = true;
 	}
 
-	plruby_eval_string("module PLRuby; class Error < StandardError; end; end",
+	plruby_eval_string("module PLRuby; class Error < StandardError;"
+					   " attr_reader :sqlstate; end; end",
 					   "plruby: interpreter init");
 
 	rb_mPLRuby = rb_const_get(rb_cObject, rb_intern("PLRuby"));
