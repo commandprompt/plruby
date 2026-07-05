@@ -17,15 +17,23 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
   reuse, standard-library `require`, `$stdout`/`$stderr` redirection, quoting
   helpers, and `plruby.start_proc`.
 
-### Documented (known limitations surfaced by the new tests)
+### Fixed
 
-- *Nested* composites are not built recursively: a composite field whose value
-  is a `Hash`, and an array-of-composite return, are rejected with "malformed
-  record literal". Flat composites with array fields work.
-- Statement-level `TRUNCATE` triggers are not dispatched ("unknown firing event
-  for trigger function").
+- **Nested composites** are now built and read recursively: a composite field
+  whose value is a `Hash` becomes a sub-record (to any depth), and a function
+  may return an array of composite. A nested composite argument arrives as a
+  nested `Hash`. (The tuple builder in `plruby_io.c` is now datum-based.)
+- **`TRUNCATE` triggers** are now dispatched: `$_TD['event']` is `TRUNCATE`,
+  statement-level, return value ignored.
+- **`spi_freeplan`** now invalidates the plan handle; reusing a freed plan
+  raises a clear PL/Ruby error instead of silently failing.
+
+### Known limitations
+
 - A caught PostgreSQL error surfaces only its message to Ruby; the original
   `SQLSTATE` is not exposed on the exception object.
+- A function body compiles to a method, so a `class`/`module` definition cannot
+  appear inline in the body (use a `plruby_modules` module instead).
 
 ## [2.0.0] — 2026-07-01
 

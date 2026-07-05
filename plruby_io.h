@@ -36,6 +36,14 @@ extern char *plruby_array_to_pg(VALUE array);
  */
 extern char *plruby_value_to_cstring(VALUE val, bool do_array, bool null_ok);
 
+/*
+ * Convert a Ruby VALUE into a Datum of the given type, recursively -- handles
+ * scalars, arrays (including multidimensional and array-of-composite), and
+ * composite types (Hash/Array -> record, nested to any depth).  Sets *isnull.
+ */
+extern Datum plruby_datum_from_value(VALUE val, Oid typeoid, int32 typmod,
+									 bool *isnull);
+
 /* Build a HeapTuple from a Ruby Hash/Array and a TupleDesc. */
 extern HeapTuple plruby_htup_from_value(VALUE val, TupleDesc tupdesc);
 

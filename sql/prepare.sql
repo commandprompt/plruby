@@ -52,4 +52,17 @@ CREATE FUNCTION prep_typed(text) RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT prep_typed('one');
 
+-- Using a plan after spi_freeplan raises cleanly, and the session recovers.
+CREATE FUNCTION prep_after_free() RETURNS text LANGUAGE plruby AS $$
+    plan = spi_prepare('select $1::int', 'int4')
+    spi_freeplan(plan)
+    begin
+        spi_exec_prepared(plan, 1)
+        'reused freed plan'
+    rescue => e
+        'freed plan rejected'
+    end
+$$;
+SELECT prep_after_free();
+
 DROP TABLE things;

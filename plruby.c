@@ -510,7 +510,29 @@ plruby_func_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 			break;
 		case T_ARRAY:
 			if (desc->ret_type & PL_ARRAY)
+			{
+				Oid			elemtype = get_element_type(desc->ret_oid);
+
+				/*
+				 * Array of composite: build the array datum directly so each
+				 * element record is assembled recursively.  Scalar arrays keep
+				 * the (multidimensional-capable) text path below.
+				 */
+				if (OidIsValid(elemtype) && type_is_rowtype(elemtype))
+				{
+					bool		isnull;
+					Datum		d = plruby_datum_from_value(result, desc->ret_oid,
+															(int32) -1, &isnull);
+
+					if (isnull)
+					{
+						fcinfo->isnull = true;
+						return (Datum) 0;
+					}
+					return d;
+				}
 				retvalbuffer = plruby_array_to_pg(result);
+			}
 			else if (desc->ret_type & PL_TUPLE)
 			{
 				TupleDesc	td;
@@ -693,6 +715,8 @@ plruby_trig_build_args(FunctionCallInfo fcinfo)
 		rb_hash_aset(td, rb_str_new_cstr("event"), rb_str_new_cstr("DELETE"));
 	else if (TRIGGER_FIRED_BY_UPDATE(tdata->tg_event))
 		rb_hash_aset(td, rb_str_new_cstr("event"), rb_str_new_cstr("UPDATE"));
+	else if (TRIGGER_FIRED_BY_TRUNCATE(tdata->tg_event))
+		rb_hash_aset(td, rb_str_new_cstr("event"), rb_str_new_cstr("TRUNCATE"));
 	else
 		elog(ERROR, "unknown firing event for trigger function");
 
@@ -767,8 +791,10 @@ plruby_trigger_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 				(errcode(ERRCODE_CONNECTION_DOES_NOT_EXIST),
 				 errmsg("could not disconnect from SPI manager")));
 
-	if (!TRIGGER_FIRED_BEFORE(trigdata->tg_event))
-		return (Datum) 0;		/* AFTER trigger: return value ignored */
+	if (!TRIGGER_FIRED_BEFORE(trigdata->tg_event) ||
+		!TRIGGER_FIRED_FOR_ROW(trigdata->tg_event))
+		return (Datum) 0;		/* AFTER, or statement-level (incl. TRUNCATE):
+								 * the return value is ignored */
 
 	if (RB_TYPE_P(result, T_STRING))
 	{

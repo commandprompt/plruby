@@ -118,13 +118,21 @@ SELECT * FROM make_tuple('answer', 42);   -- answer | 42
 Functions declared `RETURNS record` must be called with a column definition
 list, e.g. `SELECT * FROM f() AS (a int, b text)`.
 
-A composite may contain array fields, which map to Ruby `Array`s in the usual
-way. A missing `Hash` key and an explicit `nil` both become SQL `NULL`.
+A composite may contain array fields and other composites: a composite field
+whose value is a `Hash` is built recursively as a sub-record (to any depth), and
+a function may return an array of composite (a Ruby `Array` of `Hash`es). In the
+read direction a nested composite argument arrives as a nested `Hash`. A missing
+`Hash` key and an explicit `nil` both become SQL `NULL`.
 
-> **Limitation:** *nested* composites are not yet supported — a composite field
-> whose value is itself a `Hash` (a sub-record), and an array-of-composite
-> return value, are rejected with *"malformed record literal"*. Composite
-> fields must be scalars or arrays of scalars.
+```sql
+CREATE TYPE inner_t AS (a int, b text);
+CREATE TYPE outer_t AS (id int, child inner_t);
+
+CREATE FUNCTION nest() RETURNS outer_t LANGUAGE plruby AS $$
+    {'id' => 1, 'child' => {'a' => 2, 'b' => 'deep'}}
+$$;
+SELECT nest();   -- (1,"(2,deep)")
+```
 
 ## Arguments
 
@@ -187,7 +195,7 @@ involved are available in the `Hash` `$_TD`:
 | `$_TD['schemaname']` | schema name                                       |
 | `$_TD['when']`       | `BEFORE` or `AFTER`                               |
 | `$_TD['level']`      | `ROW` or `STATEMENT`                              |
-| `$_TD['event']`      | `INSERT`, `UPDATE`, or `DELETE`                   |
+| `$_TD['event']`      | `INSERT`, `UPDATE`, `DELETE`, or `TRUNCATE`       |
 | `$_TD['new']`        | new row (INSERT/UPDATE), as a `Hash`              |
 | `$_TD['old']`        | old row (UPDATE/DELETE), as a `Hash`              |
 | `$_TD['argc']`       | number of trigger arguments                       |
@@ -211,8 +219,9 @@ CREATE FUNCTION uppercase_name() RETURNS trigger LANGUAGE plruby AS $$
 $$;
 ```
 
-> **Limitation:** statement-level `TRUNCATE` triggers are not yet dispatched;
-> attaching one raises *"unknown firing event for trigger function"*.
+Statement-level `TRUNCATE` triggers are also supported: `$_TD['event']` is
+`TRUNCATE`, `$_TD['level']` is `STATEMENT`, there is no row, and the return
+value is ignored.
 
 ## Event trigger functions
 

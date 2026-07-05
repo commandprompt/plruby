@@ -69,14 +69,18 @@ SELECT * FROM del_test ORDER BY id;
 
 DROP TABLE del_test;
 
--- KNOWN LIMITATION: TRUNCATE triggers are not yet dispatched -- the handler
--- rejects the firing event.  Kept as a regression guard.
+-- A statement-level TRUNCATE trigger fires once, with event 'TRUNCATE' and no
+-- row; its return value is ignored.
 CREATE TABLE trunc_test (id int);
+INSERT INTO trunc_test VALUES (1), (2);
 CREATE FUNCTION on_truncate() RETURNS trigger LANGUAGE plruby AS $$
+    elog('NOTICE', "event=#{$_TD['event']} level=#{$_TD['level']} " +
+                   "when=#{$_TD['when']} has_new=#{$_TD.key?('new')}")
     nil
 $$;
 CREATE TRIGGER t_trunc BEFORE TRUNCATE ON trunc_test
     FOR EACH STATEMENT EXECUTE FUNCTION on_truncate();
 TRUNCATE trunc_test;
+SELECT count(*) FROM trunc_test;
 
 DROP TABLE trunc_test;

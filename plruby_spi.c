@@ -492,6 +492,9 @@ plruby_spi_exec_prepared(int argc, VALUE *argv, VALUE self)
 		rb_raise(rb_ePLRubyError, "spi_exec_prepared: missing plan");
 
 	pl = plruby_get_spi_plan(argv[0]);
+	if (pl->plan == NULL)
+		rb_raise(rb_ePLRubyError,
+				 "spi_exec_prepared: plan has already been freed");
 	nargs = argc - 1;
 	if (nargs != pl->nargs)
 		rb_raise(rb_ePLRubyError,

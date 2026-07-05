@@ -24,6 +24,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 
 /* ---------------------------------------------------------------------
  * Scalar leaf conversion
@@ -281,6 +282,152 @@ plruby_value_to_cstring(VALUE val, bool do_array, bool null_ok)
 }
 
 /* ---------------------------------------------------------------------
+ * Ruby VALUE -> Datum (recursive: scalars, arrays, composites)
+ * ------------------------------------------------------------------- */
+
+static Datum plruby_composite_datum(VALUE val, Oid typeoid, int32 typmod);
+static Datum plruby_array_datum(VALUE val, Oid elemtype);
+static void plruby_array_flatten(VALUE val, int depth, int ndims, int *dims,
+								 Oid elemtype, Datum *elems, bool *nulls,
+								 int *idx, bool *hasnull);
+
+Datum
+plruby_datum_from_value(VALUE val, Oid typeoid, int32 typmod, bool *isnull)
+{
+	Oid			elemtype;
+
+	if (NIL_P(val))
+	{
+		*isnull = true;
+		return (Datum) 0;
+	}
+	*isnull = false;
+
+	/* An array type fed a Ruby Array: build an array datum recursively. */
+	elemtype = get_element_type(typeoid);
+	if (OidIsValid(elemtype) && RB_TYPE_P(val, T_ARRAY))
+		return plruby_array_datum(val, elemtype);
+
+	/* A composite type fed a Ruby Hash (or positional Array): build a record. */
+	if (type_is_rowtype(typeoid) &&
+		(RB_TYPE_P(val, T_HASH) || RB_TYPE_P(val, T_ARRAY)))
+		return plruby_composite_datum(val, typeoid, typmod);
+
+	/* Scalar leaf: convert via the target type's input function. */
+	{
+		char	   *s = plruby_value_to_cstring(val, true, true);
+		Oid			infn,
+					ioparam;
+		Datum		d;
+
+		getTypeInputInfo(typeoid, &infn, &ioparam);
+		d = OidInputFunctionCall(infn, s, ioparam, typmod);
+		if (s != NULL)
+			pfree(s);
+		return d;
+	}
+}
+
+static Datum
+plruby_composite_datum(VALUE val, Oid typeoid, int32 typmod)
+{
+	TupleDesc	tupdesc;
+	HeapTuple	tup;
+	Datum		d;
+
+	tupdesc = lookup_rowtype_tupdesc(typeoid, typmod);
+	tup = plruby_htup_from_value(val, tupdesc);
+	d = HeapTupleGetDatum(tup);
+	ReleaseTupleDesc(tupdesc);
+	return d;
+}
+
+static Datum
+plruby_array_datum(VALUE val, Oid elemtype)
+{
+	int16		elmlen;
+	bool		elmbyval;
+	char		elmalign;
+	int			ndims = 0;
+	int			dims[MAXDIM];
+	int			lbs[MAXDIM];
+	int			nelems = 1;
+	Datum	   *elems;
+	bool	   *nulls;
+	bool		hasnull = false;
+	int			idx = 0;
+	int			i;
+	ArrayType  *arr;
+
+	get_typlenbyvalalign(elemtype, &elmlen, &elmbyval, &elmalign);
+
+	if (type_is_rowtype(elemtype))
+	{
+		/* Composite elements: a plain 1-D array (no multidimensional descent). */
+		ndims = 1;
+		dims[0] = RARRAY_LEN(val);
+		lbs[0] = 1;
+	}
+	else
+	{
+		/* Scalar elements: infer dimensions from the nested Ruby arrays. */
+		VALUE		v = val;
+
+		while (RB_TYPE_P(v, T_ARRAY) && ndims < MAXDIM)
+		{
+			dims[ndims] = RARRAY_LEN(v);
+			lbs[ndims] = 1;
+			ndims++;
+			if (RARRAY_LEN(v) == 0)
+				break;
+			v = rb_ary_entry(v, 0);
+		}
+	}
+
+	for (i = 0; i < ndims; i++)
+		nelems *= dims[i];
+
+	if (nelems == 0)
+		return PointerGetDatum(construct_empty_array(elemtype));
+
+	elems = (Datum *) palloc(nelems * sizeof(Datum));
+	nulls = (bool *) palloc(nelems * sizeof(bool));
+
+	plruby_array_flatten(val, 0, ndims, dims, elemtype,
+						 elems, nulls, &idx, &hasnull);
+
+	arr = construct_md_array(elems, hasnull ? nulls : NULL, ndims, dims, lbs,
+							 elemtype, elmlen, elmbyval, elmalign);
+	return PointerGetDatum(arr);
+}
+
+static void
+plruby_array_flatten(VALUE val, int depth, int ndims, int *dims, Oid elemtype,
+					 Datum *elems, bool *nulls, int *idx, bool *hasnull)
+{
+	int			i;
+
+	if (depth == ndims)
+	{
+		elems[*idx] = plruby_datum_from_value(val, elemtype, -1, &nulls[*idx]);
+		if (nulls[*idx])
+			*hasnull = true;
+		(*idx)++;
+		return;
+	}
+
+	if (!RB_TYPE_P(val, T_ARRAY) || RARRAY_LEN(val) != dims[depth])
+		ereport(ERROR,
+				(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR),
+				 errmsg("multidimensional arrays must have "
+						"sub-arrays with matching dimensions")));
+
+	for (i = 0; i < dims[depth]; i++)
+		plruby_array_flatten(rb_ary_entry(val, i), depth + 1, ndims, dims,
+							 elemtype, elems, nulls, idx, hasnull);
+}
+
+/* ---------------------------------------------------------------------
  * Tuple -> Ruby Hash
  * ------------------------------------------------------------------- */
 
@@ -314,6 +461,25 @@ plruby_hash_from_tuple(HeapTuple tuple, TupleDesc tupdesc)
 			continue;
 		}
 
+		/* A composite field: recurse into a nested Hash. */
+		if (type_is_rowtype(att->atttypid))
+		{
+			HeapTupleHeader th = DatumGetHeapTupleHeader(attr);
+			TupleDesc	subdesc;
+			HeapTupleData tmptup;
+
+			subdesc = lookup_rowtype_tupdesc(HeapTupleHeaderGetTypeId(th),
+											 HeapTupleHeaderGetTypMod(th));
+			tmptup.t_len = HeapTupleHeaderGetDatumLength(th);
+			ItemPointerSetInvalid(&(tmptup.t_self));
+			tmptup.t_tableOid = InvalidOid;
+			tmptup.t_data = th;
+			rb_hash_aset(h, rb_str_new_cstr(attname),
+						 plruby_hash_from_tuple(&tmptup, subdesc));
+			ReleaseTupleDesc(subdesc);
+			continue;
+		}
+
 		getTypeOutputInfo(att->atttypid, &typoutput, &typisvarlena);
 		outputstr = OidOutputFunctionCall(typoutput, attr);
 
@@ -340,8 +506,9 @@ plruby_htup_from_value(VALUE val, TupleDesc tupdesc)
 	MemoryContext tmpcxt,
 				oldcxt;
 	HeapTuple	ret;
-	AttInMetadata *attinmeta;
-	char	  **values;
+	Datum	   *dvalues;
+	bool	   *nulls;
+	int			natts = tupdesc->natts;
 	int			i;
 
 	tmpcxt = AllocSetContextCreate(CurTransactionContext,
@@ -349,38 +516,46 @@ plruby_htup_from_value(VALUE val, TupleDesc tupdesc)
 								   ALLOCSET_DEFAULT_SIZES);
 	oldcxt = MemoryContextSwitchTo(tmpcxt);
 
-	values = (char **) palloc0(tupdesc->natts * sizeof(char *));
+	dvalues = (Datum *) palloc0(natts * sizeof(Datum));
+	nulls = (bool *) palloc(natts * sizeof(bool));
+	for (i = 0; i < natts; i++)
+		nulls[i] = true;
 
 	if (RB_TYPE_P(val, T_HASH))
 	{
-		bool		allempty = true;
+		bool		anymatch = false;
 
-		for (i = 0; i < tupdesc->natts; i++)
+		for (i = 0; i < natts; i++)
 		{
-			char	   *key = SPI_fname(tupdesc, i + 1);
-			VALUE		el = rb_hash_lookup2(val, rb_str_new_cstr(key), Qundef);
+			Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+			VALUE		el;
 
+			if (att->attisdropped)
+				continue;
+			el = rb_hash_lookup2(val, rb_str_new_cstr(NameStr(att->attname)),
+								 Qundef);
 			if (el == Qundef)
-				values[i] = NULL;
-			else
-			{
-				allempty = false;
-				values[i] = plruby_value_to_cstring(el, true, true);
-			}
-			pfree(key);
+				continue;
+			anymatch = true;
+			dvalues[i] = plruby_datum_from_value(el, att->atttypid,
+												 att->atttypmod, &nulls[i]);
 		}
 
 		/* No attribute names matched: fall back to the hash's values in order */
-		if (allempty)
+		if (!anymatch)
 		{
 			VALUE		vals = rb_funcall(val, rb_intern("values"), 0);
 			long		n = RARRAY_LEN(vals);
 
-			for (i = 0; i < tupdesc->natts && i < n; i++)
+			for (i = 0; i < natts && i < n; i++)
 			{
-				VALUE		el = rb_ary_entry(vals, i);
+				Form_pg_attribute att = TupleDescAttr(tupdesc, i);
 
-				values[i] = plruby_value_to_cstring(el, true, true);
+				if (att->attisdropped)
+					continue;
+				dvalues[i] = plruby_datum_from_value(rb_ary_entry(vals, i),
+													 att->atttypid,
+													 att->atttypmod, &nulls[i]);
 			}
 		}
 	}
@@ -388,19 +563,28 @@ plruby_htup_from_value(VALUE val, TupleDesc tupdesc)
 	{
 		long		n = RARRAY_LEN(val);
 
-		for (i = 0; i < tupdesc->natts && i < n; i++)
-			values[i] = plruby_value_to_cstring(rb_ary_entry(val, i), true, true);
+		for (i = 0; i < natts && i < n; i++)
+		{
+			Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+
+			if (att->attisdropped)
+				continue;
+			dvalues[i] = plruby_datum_from_value(rb_ary_entry(val, i),
+												 att->atttypid,
+												 att->atttypmod, &nulls[i]);
+		}
 	}
 	else
 	{
 		/* a scalar: only sensible for a single-column result */
-		values[0] = plruby_value_to_cstring(val, true, true);
+		Form_pg_attribute att = TupleDescAttr(tupdesc, 0);
+
+		dvalues[0] = plruby_datum_from_value(val, att->atttypid,
+											 att->atttypmod, &nulls[0]);
 	}
 
-	attinmeta = TupleDescGetAttInMetadata(tupdesc);
-
 	MemoryContextSwitchTo(oldcxt);
-	ret = BuildTupleFromCStrings(attinmeta, values);
+	ret = heap_form_tuple(tupdesc, dvalues, nulls);
 
 	MemoryContextDelete(tmpcxt);
 
