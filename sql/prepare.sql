@@ -36,4 +36,20 @@ CREATE FUNCTION prep_wrong() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT prep_wrong();
 
+-- One prepared plan reused across many executions in a single call.
+CREATE FUNCTION prep_reuse() RETURNS text LANGUAGE plruby AS $$
+    plan = spi_prepare('select name from things where id = $1', 'int4')
+    names = (1..3).map { |i| spi_fetch_row(spi_exec_prepared(plan, i))['name'] }
+    spi_freeplan(plan)
+    names.join(',')
+$$;
+SELECT prep_reuse();
+
+-- Text and numeric parameter types.
+CREATE FUNCTION prep_typed(text) RETURNS int LANGUAGE plruby AS $$
+    plan = spi_prepare('select count(*) as c from things where name > $1', 'text')
+    spi_fetch_row(spi_exec_prepared(plan, args[0]))['c']
+$$;
+SELECT prep_typed('one');
+
 DROP TABLE things;

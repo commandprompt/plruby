@@ -51,3 +51,32 @@ CREATE TRIGGER t_args BEFORE INSERT ON arg_test
 INSERT INTO arg_test VALUES (1);
 
 DROP TABLE trig_test, skip_test, meta_test, arg_test;
+
+-- DELETE trigger: $_TD['old'] holds the row and 'new' is absent.  Returning
+-- nil lets the delete proceed; 'SKIP' suppresses it for the guarded row.
+CREATE TABLE del_test (id int, name text);
+INSERT INTO del_test VALUES (1, 'keep'), (2, 'drop'), (3, 'guard');
+CREATE FUNCTION on_delete() RETURNS trigger LANGUAGE plruby AS $$
+    elog('NOTICE', "event=#{$_TD['event']} old=#{$_TD['old'].inspect} " +
+                   "has_new=#{$_TD.key?('new')}")
+    return 'SKIP' if $_TD['old']['name'] == 'guard'
+    nil
+$$;
+CREATE TRIGGER t_del BEFORE DELETE ON del_test
+    FOR EACH ROW EXECUTE FUNCTION on_delete();
+DELETE FROM del_test WHERE id IN (2, 3);
+SELECT * FROM del_test ORDER BY id;
+
+DROP TABLE del_test;
+
+-- KNOWN LIMITATION: TRUNCATE triggers are not yet dispatched -- the handler
+-- rejects the firing event.  Kept as a regression guard.
+CREATE TABLE trunc_test (id int);
+CREATE FUNCTION on_truncate() RETURNS trigger LANGUAGE plruby AS $$
+    nil
+$$;
+CREATE TRIGGER t_trunc BEFORE TRUNCATE ON trunc_test
+    FOR EACH STATEMENT EXECUTE FUNCTION on_truncate();
+TRUNCATE trunc_test;
+
+DROP TABLE trunc_test;

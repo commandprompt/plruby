@@ -118,6 +118,14 @@ SELECT * FROM make_tuple('answer', 42);   -- answer | 42
 Functions declared `RETURNS record` must be called with a column definition
 list, e.g. `SELECT * FROM f() AS (a int, b text)`.
 
+A composite may contain array fields, which map to Ruby `Array`s in the usual
+way. A missing `Hash` key and an explicit `nil` both become SQL `NULL`.
+
+> **Limitation:** *nested* composites are not yet supported — a composite field
+> whose value is itself a `Hash` (a sub-record), and an array-of-composite
+> return value, are rejected with *"malformed record literal"*. Composite
+> fields must be scalars or arrays of scalars.
+
 ## Arguments
 
 PL/Ruby supports the full range of argument modes.
@@ -190,7 +198,11 @@ Return value of a **BEFORE ... FOR EACH ROW** trigger:
 - `nil` — proceed with the operation using the unmodified row.
 - `'SKIP'` — silently skip the operation for this row.
 - `'MODIFY'` — proceed using the (modified) `$_TD['new']` row. Modify fields in
-  place, e.g. `$_TD['new']['col'] = 'value'`.
+  place, e.g. `$_TD['new']['col'] = 'value'`. Only valid for INSERT/UPDATE; on a
+  DELETE there is no new row, so return `nil` (proceed) or `'SKIP'` instead.
+
+On a DELETE trigger `$_TD['old']` holds the row and `$_TD['new']` is absent; on
+an INSERT, `$_TD['old']` is absent.
 
 ```sql
 CREATE FUNCTION uppercase_name() RETURNS trigger LANGUAGE plruby AS $$
@@ -198,6 +210,9 @@ CREATE FUNCTION uppercase_name() RETURNS trigger LANGUAGE plruby AS $$
     'MODIFY'
 $$;
 ```
+
+> **Limitation:** statement-level `TRUNCATE` triggers are not yet dispatched;
+> attaching one raises *"unknown firing event for trigger function"*.
 
 ## Event trigger functions
 

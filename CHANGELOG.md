@@ -5,6 +5,28 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Expanded regression suite** — 20 → 28 tests, verified on **PostgreSQL 11,
+  12, 13, 14, 16, and 18** with Ruby 3.2. New coverage: `bytea` conversion,
+  special numeric/float values (`NaN`, `±Infinity`, integer overflow), nested
+  and array-bearing composites, SPI DML status codes and NULL columns,
+  DELETE-trigger `$_TD['old']` handling, the error/`ensure` model, prepared-plan
+  reuse, standard-library `require`, `$stdout`/`$stderr` redirection, quoting
+  helpers, and `plruby.start_proc`.
+
+### Documented (known limitations surfaced by the new tests)
+
+- *Nested* composites are not built recursively: a composite field whose value
+  is a `Hash`, and an array-of-composite return, are rejected with "malformed
+  record literal". Flat composites with array fields work.
+- Statement-level `TRUNCATE` triggers are not dispatched ("unknown firing event
+  for trigger function").
+- A caught PostgreSQL error surfaces only its message to Ruby; the original
+  `SQLSTATE` is not exposed on the exception object.
+
 ## [2.0.0] — 2026-07-01
 
 The initial release of the modernized PL/Ruby: an MRI Ruby interpreter embedded

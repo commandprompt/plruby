@@ -30,6 +30,20 @@ CREATE FUNCTION pairs() RETURNS SETOF pair LANGUAGE plruby AS $$
 $$;
 SELECT * FROM pairs();
 
+-- A SETOF composite row may carry NULL fields (missing key and explicit nil).
+CREATE FUNCTION sparse_pairs() RETURNS SETOF pair LANGUAGE plruby AS $$
+    return_next({'k' => 'has', 'v' => 1})
+    return_next({'k' => 'nil_v', 'v' => nil})
+    return_next({'v' => 9})
+$$;
+SELECT * FROM sparse_pairs();
+
+-- A set-returning function that never calls return_next yields zero rows.
+CREATE FUNCTION no_rows() RETURNS SETOF int LANGUAGE plruby AS $$
+    nil
+$$;
+SELECT count(*) AS n FROM no_rows();
+
 -- return_next outside a set-returning function is an error.
 CREATE FUNCTION not_srf() RETURNS int LANGUAGE plruby AS $$
     return_next(1)

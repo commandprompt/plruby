@@ -1,0 +1,59 @@
+--
+-- Composite / record conversion: composites containing arrays, NULL fields,
+-- and the current limitations around *nested* composites.
+--
+CREATE TYPE box_t AS (id int, tags text[]);
+-- A composite whose fields include an array round-trips through a Ruby Hash.
+CREATE FUNCTION c_box() RETURNS box_t LANGUAGE plruby AS $$
+    {'id' => 1, 'tags' => ['x', 'y']}
+$$;
+SELECT * FROM c_box();
+ id | tags  
+----+-------
+  1 | {x,y}
+(1 row)
+
+-- Reading a composite argument exposes the array field as a Ruby Array.
+CREATE FUNCTION c_box_read(box_t) RETURNS text LANGUAGE plruby AS $$
+    "id=#{args[0]['id']} tags=#{args[0]['tags'].inspect}"
+$$;
+SELECT c_box_read(ROW(7, ARRAY['p', 'q'])::box_t);
+      c_box_read      
+----------------------
+ id=7 tags=["p", "q"]
+(1 row)
+
+-- A missing Hash key and an explicit nil both become SQL NULL.
+CREATE FUNCTION c_nulls() RETURNS box_t LANGUAGE plruby AS $$
+    {'id' => nil}
+$$;
+SELECT * FROM c_nulls();
+ id | tags 
+----+------
+    | 
+(1 row)
+
+-- KNOWN LIMITATION: a *nested* composite field (a Hash value) is not built into
+-- a sub-record -- it is stringified and rejected.  Kept as a regression guard.
+CREATE TYPE nest_t AS (id int, child box_t);
+CREATE FUNCTION c_nested() RETURNS nest_t LANGUAGE plruby AS $$
+    {'id' => 1, 'child' => {'id' => 2, 'tags' => []}}
+$$;
+SELECT * FROM c_nested();
+ERROR:  malformed record literal: "{"id"=>2, "tags"=>[]}"
+DETAIL:  Missing left parenthesis.
+-- KNOWN LIMITATION: an array of composite is likewise not yet supported.
+CREATE FUNCTION c_arr() RETURNS box_t[] LANGUAGE plruby AS $$
+    [{'id' => 1, 'tags' => ['a']}]
+$$;
+SELECT c_arr();
+ERROR:  malformed record literal: "{"id"=>1, "tags"=>["a"]}"
+DETAIL:  Missing left parenthesis.
+DROP FUNCTION c_box_read(box_t);
+DROP TYPE nest_t CASCADE;
+NOTICE:  drop cascades to function c_nested()
+DROP TYPE box_t CASCADE;
+NOTICE:  drop cascades to 3 other objects
+DETAIL:  drop cascades to function c_arr()
+drop cascades to function c_box()
+drop cascades to function c_nulls()

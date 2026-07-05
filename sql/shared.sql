@@ -22,3 +22,11 @@ $$;
 SELECT push_shared(10);
 SELECT push_shared(20);
 SELECT push_shared(30);
+
+-- $_SHARED written before an error survives, and is visible to a later call.
+CREATE FUNCTION stash_then_fail() RETURNS int LANGUAGE plruby AS $$
+    $_SHARED['survivor'] = 'still here'
+    raise 'deliberate failure'
+$$;
+SELECT stash_then_fail();
+SELECT get_shared('survivor');
