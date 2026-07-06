@@ -1,0 +1,62 @@
+--
+-- Messaging: elog and pg_raise.
+--
+CREATE FUNCTION do_notice() RETURNS void LANGUAGE plruby AS $$
+    elog('NOTICE', 'a notice from ruby')
+    nil
+$$;
+SELECT do_notice();
+NOTICE:  a notice from ruby
+ do_notice 
+-----------
+ 
+(1 row)
+
+CREATE FUNCTION do_warning() RETURNS void LANGUAGE plruby AS $$
+    elog('WARNING', 'a warning from ruby')
+    nil
+$$;
+SELECT do_warning();
+WARNING:  a warning from ruby
+ do_warning 
+------------
+ 
+(1 row)
+
+CREATE FUNCTION do_error() RETURNS void LANGUAGE plruby AS $$
+    elog('ERROR', 'an error from ruby')
+    nil
+$$;
+SELECT do_error();
+ERROR:  an error from ruby
+-- elog with an unknown level.
+CREATE FUNCTION do_badlevel() RETURNS void LANGUAGE plruby AS $$
+    elog('BOGUS', 'nope')
+    nil
+$$;
+SELECT do_badlevel();
+ERROR:  elog: unrecognized level "BOGUS"
+-- An uncaught Ruby exception becomes a PostgreSQL error.
+CREATE FUNCTION do_raise() RETURNS void LANGUAGE plruby AS $$
+    raise 'kaboom'
+$$;
+SELECT do_raise();
+ERROR:  kaboom
+-- Calling an undefined method also surfaces as an error.
+CREATE FUNCTION do_undef() RETURNS void LANGUAGE plruby AS $$
+    this_method_does_not_exist()
+$$;
+SELECT do_undef();
+ERROR:  undefined method 'this_method_does_not_exist' for main
+-- pg_raise (the older, narrower spelling).
+CREATE FUNCTION do_pg_raise() RETURNS void LANGUAGE plruby AS $$
+    pg_raise('notice', 'via pg_raise')
+    nil
+$$;
+SELECT do_pg_raise();
+NOTICE:  via pg_raise
+ do_pg_raise 
+-------------
+ 
+(1 row)
+

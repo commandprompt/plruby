@@ -65,23 +65,24 @@ SELECT * FROM extract_emails('Contact ann@example.com or bob@test.org today.');
 ### HMAC-signed tokens
 
 Sign a value so a client cannot tamper with it, and verify it in constant
-time on the way back in.
+time on the way back in. `Array#pack('m0')` handles the Base64 leg — no
+extra requires (the `base64` library left Ruby's default gems in 3.4).
 
 ```sql
 CREATE FUNCTION sign_token(payload text, key text) RETURNS text LANGUAGE plruby AS $$
     require 'openssl'
-    require 'base64'
     mac = OpenSSL::HMAC.hexdigest('SHA256', args[1], args[0])
-    "#{Base64.strict_encode64(args[0])}.#{mac}"
+    "#{[args[0]].pack('m0')}.#{mac}"
 $$;
 
 CREATE FUNCTION verify_token(token text, key text) RETURNS text LANGUAGE plruby AS $$
     require 'openssl'
-    require 'base64'
     data, mac = args[0].split('.', 2)
-    payload = Base64.strict_decode64(data.to_s)
-    expected = OpenSSL::HMAC.hexdigest('SHA256', args[1], payload)
-    OpenSSL.secure_compare(mac.to_s, expected) ? payload : nil
+    payload = data.to_s.unpack1('m0') rescue nil
+    if payload
+        expected = OpenSSL::HMAC.hexdigest('SHA256', args[1], payload)
+        OpenSSL.secure_compare(mac.to_s, expected) ? payload : nil
+    end
 $$;
 ```
 

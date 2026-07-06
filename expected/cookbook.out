@@ -50,17 +50,17 @@ SELECT * FROM extract_emails('Contact ann@example.com or bob@test.org today.');
 -- Recipe: HMAC-signed tokens (sign a value so clients cannot tamper with it).
 CREATE FUNCTION sign_token(payload text, key text) RETURNS text LANGUAGE plruby AS $$
     require 'openssl'
-    require 'base64'
     mac = OpenSSL::HMAC.hexdigest('SHA256', args[1], args[0])
-    "#{Base64.strict_encode64(args[0])}.#{mac}"
+    "#{[args[0]].pack('m0')}.#{mac}"
 $$;
 CREATE FUNCTION verify_token(token text, key text) RETURNS text LANGUAGE plruby AS $$
     require 'openssl'
-    require 'base64'
     data, mac = args[0].split('.', 2)
-    payload = Base64.strict_decode64(data.to_s)
-    expected = OpenSSL::HMAC.hexdigest('SHA256', args[1], payload)
-    OpenSSL.secure_compare(mac.to_s, expected) ? payload : nil
+    payload = data.to_s.unpack1('m0') rescue nil
+    if payload
+        expected = OpenSSL::HMAC.hexdigest('SHA256', args[1], payload)
+        OpenSSL.secure_compare(mac.to_s, expected) ? payload : nil
+    end
 $$;
 SELECT sign_token('user=42', 'server-key');
                                   sign_token                                   

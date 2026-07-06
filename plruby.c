@@ -1446,7 +1446,18 @@ plruby_validator(PG_FUNCTION_ARGS)
 		char	   *msg = plruby_pop_exception_message();
 
 		if (msg != NULL)
+		{
+			/*
+			 * Ruby 3.4's parser (Prism) reports syntax errors over several
+			 * lines, quoting the generated wrapper source — including the
+			 * OID-derived internal method name.  Keep the first line only.
+			 */
+			char	   *nl = strchr(msg, '\n');
+
+			if (nl != NULL)
+				*nl = '\0';
 			elog(ERROR, "function \"%s\" does not validate: %s", funcname, msg);
+		}
 		else
 			elog(ERROR, "function \"%s\" does not validate", funcname);
 	}
