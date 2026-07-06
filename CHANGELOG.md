@@ -5,7 +5,15 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.2.0] — 2026-07-05
+
+Native jsonb, modern Ruby, and CI. The `jsonb_plruby` companion extension
+exchanges jsonb with native Ruby data; RubyGems is enabled in the embedded
+interpreter (restoring csv/bigdecimal/base64 on Ruby 3.4 and making
+installed gems requirable); every push is now verified by GitHub Actions on
+PostgreSQL 12–18 and Ruby 3.2/3.3/3.4 (PG 11 verified out-of-band). All
+plruby changes are in the shared library; `ALTER EXTENSION plruby UPDATE`
+completes the upgrade after installing the new binary.
 
 ### Added
 
@@ -27,6 +35,14 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 - **Regression suite 35 → 37 tests** (`replace`: mid-session
   `CREATE OR REPLACE` recompilation; extended `misc`/`sqlstate`/`prepare`),
   plus the `jsonb_plruby` suite.
+- **CI (GitHub Actions)** — every push and pull request builds both
+  extensions and runs both suites on PostgreSQL 12–18 (system Ruby 3.2) and
+  on Ruby 3.3/3.4 (PostgreSQL 18).
+- **Ruby 3.3 and 3.4 support** — alternate expected files cover their
+  changed `NoMethodError`/`Hash#inspect` output; validation errors are
+  reported as a single line (Ruby 3.4's parser quotes the generated wrapper
+  source over many lines); the cookbook's token recipe encodes with
+  `Array#pack('m0')` instead of the `base64` library.
 
 ### Changed
 
