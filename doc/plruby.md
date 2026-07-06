@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/plruby-logo-dark.svg">
+    <img src="assets/plruby-logo.svg" alt="PL/Ruby" width="380">
+  </picture>
+</p>
+
 # PL/Ruby Language Reference
 
 PL/Ruby lets you write PostgreSQL functions and triggers in Ruby. This document

@@ -1,8 +1,9 @@
 <div align="center">
 
-# PL/Ruby
-
-**Write PostgreSQL functions, triggers, and procedures in Ruby.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/assets/plruby-logo-dark.svg">
+  <img src="doc/assets/plruby-logo.svg" alt="PL/Ruby — Procedural Language for PostgreSQL" width="440">
+</picture>
 
 [![CI](https://github.com/commandprompt/plruby/actions/workflows/ci.yml/badge.svg)](https://github.com/commandprompt/plruby/actions/workflows/ci.yml)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-11_to_18-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
