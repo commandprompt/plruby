@@ -8,18 +8,21 @@ CREATE FUNCTION e_raise() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT e_raise();
 ERROR:  boom
+CONTEXT:  PL/Ruby function "e_raise"
 -- A specific exception class's message is preserved.
 CREATE FUNCTION e_argerror() RETURNS int LANGUAGE plruby AS $$
     Integer('not a number')
 $$;
 SELECT e_argerror();
 ERROR:  invalid value for Integer(): "not a number"
+CONTEXT:  PL/Ruby function "e_argerror"
 -- A ZeroDivisionError surfaces as an error.
 CREATE FUNCTION e_divzero() RETURNS int LANGUAGE plruby AS $$
     1 / 0
 $$;
 SELECT e_divzero();
 ERROR:  divided by 0
+CONTEXT:  PL/Ruby function "e_divzero"
 -- Exceptions can be rescued inside the function and turned into a value.
 CREATE FUNCTION e_rescued() RETURNS text LANGUAGE plruby AS $$
     begin
@@ -55,12 +58,14 @@ CREATE FUNCTION e_wrong_array() RETURNS int[] LANGUAGE plruby AS $$
 $$;
 SELECT e_wrong_array();
 ERROR:  function declared to return array must return an array
+CONTEXT:  PL/Ruby function "e_wrong_array"
 -- elog('ERROR', ...) aborts like a PostgreSQL error.
 CREATE FUNCTION e_elog() RETURNS void LANGUAGE plruby AS $$
     elog('ERROR', 'explicit elog error')
 $$;
 SELECT e_elog();
 ERROR:  explicit elog error
+CONTEXT:  PL/Ruby function "e_elog"
 -- After an error, the session remains usable.
 CREATE FUNCTION e_ok() RETURNS int LANGUAGE plruby AS $$
     123

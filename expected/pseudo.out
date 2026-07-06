@@ -17,6 +17,7 @@ CREATE FUNCTION bad_record() RETURNS record LANGUAGE plruby AS $$
 $$;
 SELECT * FROM bad_record() AS (a int);
 ERROR:  function declared to return tuple must return an array or hash
+CONTEXT:  PL/Ruby function "bad_record"
 -- anyelement.
 CREATE FUNCTION identity(anyelement) RETURNS anyelement LANGUAGE plruby AS $$
     args[0]

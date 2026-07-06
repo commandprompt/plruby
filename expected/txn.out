@@ -35,4 +35,5 @@ CREATE FUNCTION txn_in_func() RETURNS void LANGUAGE plruby AS $$
 $$;
 SELECT txn_in_func();
 ERROR:  invalid transaction termination
+CONTEXT:  PL/Ruby function "txn_in_func"
 DROP TABLE txn_log;

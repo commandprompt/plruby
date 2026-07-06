@@ -18,5 +18,6 @@ CREATE EVENT TRIGGER et_guard ON ddl_command_start EXECUTE FUNCTION no_drop();
 CREATE TABLE et_guarded (id int);
 DROP TABLE et_guarded;
 ERROR:  dropping tables is not allowed
+CONTEXT:  PL/Ruby function "no_drop"
 DROP EVENT TRIGGER et_guard;
 DROP TABLE et_guarded;

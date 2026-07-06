@@ -98,3 +98,4 @@ SELECT jb_bad();
 ERROR:  invalid input syntax for type json
 DETAIL:  The input string ended unexpectedly.
 CONTEXT:  JSON data, line 1: {"unterminated": 
+PL/Ruby function "jb_bad"

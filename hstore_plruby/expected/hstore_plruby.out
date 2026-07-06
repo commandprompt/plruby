@@ -89,6 +89,7 @@ $$;
 SELECT ht_bad();
 ERROR:  cannot transform Ruby object of class Array to hstore
 HINT:  An hstore value is built from a Hash.
+CONTEXT:  PL/Ruby function "ht_bad"
 -- The transform reaches nested contexts: SETOF rows via return_next...
 CREATE FUNCTION ht_shatter(hstore) RETURNS SETOF hstore
 TRANSFORM FOR TYPE hstore

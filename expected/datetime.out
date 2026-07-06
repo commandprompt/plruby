@@ -87,6 +87,7 @@ CREATE FUNCTION dt_bad() RETURNS date LANGUAGE plruby AS $$
 $$;
 SELECT dt_bad();
 ERROR:  invalid input syntax for type date: "not-a-date"
+CONTEXT:  PL/Ruby function "dt_bad"
 RESET datestyle;
 RESET timezone;
 RESET intervalstyle;

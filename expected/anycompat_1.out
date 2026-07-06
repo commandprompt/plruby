@@ -1,0 +1,61 @@
+--
+-- anycompatible / anycompatiblearray polymorphic pseudo-types (PostgreSQL
+-- 13+).  On PostgreSQL 11 and 12 the types do not exist; the alternate
+-- expected file anycompat_1.out matches that case.
+--
+CREATE FUNCTION ac_identity(anycompatible) RETURNS anycompatible LANGUAGE plruby AS $$
+    args[0]
+$$;
+ERROR:  type anycompatible does not exist
+SELECT ac_identity(42);
+ERROR:  function ac_identity(integer) does not exist
+LINE 1: SELECT ac_identity(42);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT ac_identity('hello'::text);
+ERROR:  function ac_identity(text) does not exist
+LINE 1: SELECT ac_identity('hello'::text);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT ac_identity(3.5::float8);
+ERROR:  function ac_identity(double precision) does not exist
+LINE 1: SELECT ac_identity(3.5::float8);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- anycompatible unifies its arguments to a common type before the call.
+CREATE FUNCTION ac_max2(anycompatible, anycompatible) RETURNS anycompatible LANGUAGE plruby AS $$
+    a, b = args
+    a >= b ? a : b
+$$;
+ERROR:  type anycompatible does not exist
+SELECT ac_max2(3, 7);
+ERROR:  function ac_max2(integer, integer) does not exist
+LINE 1: SELECT ac_max2(3, 7);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT ac_max2(2.5::float8, 1);
+ERROR:  function ac_max2(double precision, integer) does not exist
+LINE 1: SELECT ac_max2(2.5::float8, 1);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+-- anycompatiblearray: the array arrives as a Ruby Array and returns unchanged.
+CREATE FUNCTION ac_arr(anycompatiblearray) RETURNS anycompatiblearray LANGUAGE plruby AS $$
+    args[0]
+$$;
+ERROR:  type anycompatiblearray does not exist
+SELECT ac_arr(ARRAY[1, 2, 3]);
+ERROR:  function ac_arr(integer[]) does not exist
+LINE 1: SELECT ac_arr(ARRAY[1, 2, 3]);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT ac_arr(ARRAY['a', 'b']::text[]);
+ERROR:  function ac_arr(text[]) does not exist
+LINE 1: SELECT ac_arr(ARRAY['a', 'b']::text[]);
+               ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+DROP FUNCTION ac_identity(anycompatible);
+ERROR:  type "anycompatible" does not exist
+DROP FUNCTION ac_max2(anycompatible, anycompatible);
+ERROR:  type "anycompatible" does not exist
+DROP FUNCTION ac_arr(anycompatiblearray);
+ERROR:  type "anycompatiblearray" does not exist

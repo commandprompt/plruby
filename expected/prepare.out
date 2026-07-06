@@ -87,6 +87,7 @@ CREATE FUNCTION prep_wrong() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT prep_wrong();
 ERROR:  spi_exec_prepared: plan expects 1 argument(s), got 0
+CONTEXT:  PL/Ruby function "prep_wrong"
 -- One prepared plan reused across many executions in a single call.
 CREATE FUNCTION prep_reuse() RETURNS text LANGUAGE plruby AS $$
     plan = spi_prepare('select name from things where id = $1', 'int4')

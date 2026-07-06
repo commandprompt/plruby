@@ -10,6 +10,7 @@ CREATE FUNCTION h_srf_boom() RETURNS SETOF int LANGUAGE plruby AS $$
 $$;
 SELECT * FROM h_srf_boom();
 ERROR:  boom after two rows
+CONTEXT:  PL/Ruby function "h_srf_boom"
 -- ...and a following SRF call works (SRF state was restored).
 CREATE FUNCTION h_srf_ok() RETURNS SETOF int LANGUAGE plruby AS $$
     (1..3).each { |i| return_next i }

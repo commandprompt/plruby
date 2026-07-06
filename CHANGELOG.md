@@ -5,6 +5,32 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-07-06
+
+Feature parity with the sibling PL/php 2.4: an `on_init` hook, the
+`anycompatible` polymorphics, and error `CONTEXT` lines. All plruby changes are
+in the shared library; `ALTER EXTENSION plruby UPDATE` completes the upgrade
+after installing the new binary.
+
+### Added
+
+- **`plruby.on_init`**: a snippet of Ruby source evaluated at the top level when
+  the interpreter is first initialized in a session, before `plruby_modules` and
+  `plruby.start_proc`. The counterpart of `plperl.on_init`, and the natural place
+  for `require`s and helper definitions.
+- **`anycompatible` and `anycompatiblearray`** are accepted as argument and
+  return types on PostgreSQL 13 and newer.
+- **Error `CONTEXT` lines.** An error raised while PL/Ruby code runs now carries
+  a `CONTEXT: PL/Ruby function "name"` line (or `PL/Ruby anonymous code block`
+  for a `DO` block), like every other procedural language.
+
+### Changed
+
+- **Polymorphic array arguments arrive as Ruby `Array`s.** An `anyarray` (or
+  `anycompatiblearray`) argument is now resolved to its concrete type at call
+  time and converts to a Ruby `Array`, instead of arriving as its text form.
+  `anyelement` arguments likewise arrive as their native Ruby type.
+
 ## [2.3.0] - 2026-07-05
 
 Inline class definitions, the hstore transform, and transform coverage in

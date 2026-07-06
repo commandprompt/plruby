@@ -52,12 +52,14 @@ CREATE FUNCTION test_a_bogus_array() RETURNS int[] LANGUAGE plruby AS $$
 $$;
 SELECT test_a_bogus_array();
 ERROR:  function declared to return array must return an array
+CONTEXT:  PL/Ruby function "test_a_bogus_array"
 -- A scalar function may not return an array.
 CREATE FUNCTION test_a_bogus_int() RETURNS integer LANGUAGE plruby AS $$
     [1]
 $$;
 SELECT test_a_bogus_int();
 ERROR:  this plruby function cannot return arrays
+CONTEXT:  PL/Ruby function "test_a_bogus_int"
 -- Native argument types: integers arrive as Integer.
 CREATE FUNCTION r_max(integer, integer) RETURNS integer STRICT LANGUAGE plruby AS $$
     args[0] > args[1] ? args[0] : args[1]

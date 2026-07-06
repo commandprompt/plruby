@@ -29,6 +29,7 @@ CREATE FUNCTION do_error() RETURNS void LANGUAGE plruby AS $$
 $$;
 SELECT do_error();
 ERROR:  an error from ruby
+CONTEXT:  PL/Ruby function "do_error"
 -- elog with an unknown level.
 CREATE FUNCTION do_badlevel() RETURNS void LANGUAGE plruby AS $$
     elog('BOGUS', 'nope')
@@ -36,18 +37,21 @@ CREATE FUNCTION do_badlevel() RETURNS void LANGUAGE plruby AS $$
 $$;
 SELECT do_badlevel();
 ERROR:  elog: unrecognized level "BOGUS"
+CONTEXT:  PL/Ruby function "do_badlevel"
 -- An uncaught Ruby exception becomes a PostgreSQL error.
 CREATE FUNCTION do_raise() RETURNS void LANGUAGE plruby AS $$
     raise 'kaboom'
 $$;
 SELECT do_raise();
 ERROR:  kaboom
+CONTEXT:  PL/Ruby function "do_raise"
 -- Calling an undefined method also surfaces as an error.
 CREATE FUNCTION do_undef() RETURNS void LANGUAGE plruby AS $$
     this_method_does_not_exist()
 $$;
 SELECT do_undef();
 ERROR:  undefined method `this_method_does_not_exist' for main
+CONTEXT:  PL/Ruby function "do_undef"
 -- pg_raise (the older, narrower spelling).
 CREATE FUNCTION do_pg_raise() RETURNS void LANGUAGE plruby AS $$
     pg_raise('notice', 'via pg_raise')

@@ -82,3 +82,4 @@ CREATE FUNCTION not_srf() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT not_srf();
 ERROR:  cannot use return_next in functions not declared to return a set
+CONTEXT:  PL/Ruby function "not_srf"

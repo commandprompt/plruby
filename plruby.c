@@ -106,6 +106,7 @@ VALUE		plruby_proc_cache;
 static bool plruby_first_call = true;
 static bool plruby_vm_inited = false;
 static char *plruby_start_proc = NULL;
+static char *plruby_on_init = NULL;
 static bool plruby_session_inited = false;
 
 /* Forward declarations */
@@ -278,6 +279,17 @@ plruby_remove_method(const char *name)
 void
 _PG_init(void)
 {
+	DefineCustomStringVariable("plruby.on_init",
+							   "Ruby source to evaluate when the interpreter "
+							   "is first initialized in a session.",
+							   "Runs before plruby_modules and plruby.start_proc, "
+							   "at the top level.  The counterpart of "
+							   "plperl.on_init.",
+							   &plruby_on_init,
+							   NULL,
+							   PGC_SUSET, 0,
+							   NULL, NULL, NULL);
+
 	DefineCustomStringVariable("plruby.start_proc",
 							   "PL/Ruby function to call when the interpreter "
 							   "is first initialized in a session.",
@@ -428,6 +440,27 @@ plruby_session_init(void)
 		return;
 	plruby_session_inited = true;
 
+	/*
+	 * plruby.on_init runs first: arbitrary top-level Ruby (requires, helper
+	 * definitions, ...) evaluated once, before modules and start_proc.  The
+	 * counterpart of plperl.on_init.
+	 */
+	if (plruby_on_init != NULL && plruby_on_init[0] != '\0')
+	{
+		int			state = 0;
+
+		rb_eval_string_protect(plruby_on_init, &state);
+		if (state)
+		{
+			char	   *msg = plruby_pop_exception_message();
+
+			if (msg != NULL)
+				elog(ERROR, "plruby.on_init failed: %s", msg);
+			else
+				elog(ERROR, "plruby.on_init failed");
+		}
+	}
+
 	plruby_load_modules();
 
 	if (plruby_start_proc != NULL && plruby_start_proc[0] != '\0')
@@ -443,6 +476,28 @@ plruby_session_init(void)
 				 plruby_start_proc, SPI_result_code_string(ret));
 		pfree(buf.data);
 	}
+}
+
+/* ---------------------------------------------------------------------
+ * Error context: name the running code in the server's CONTEXT line, like
+ * every other procedural language.
+ * ------------------------------------------------------------------- */
+
+typedef struct plruby_error_ctx
+{
+	const char *proname;		/* real function name, or NULL */
+	bool		inline_block;	/* true for a DO block */
+} plruby_error_ctx;
+
+static void
+plruby_error_callback(void *arg)
+{
+	plruby_error_ctx *ctx = (plruby_error_ctx *) arg;
+
+	if (ctx->inline_block)
+		errcontext("PL/Ruby anonymous code block");
+	else if (ctx->proname != NULL)
+		errcontext("PL/Ruby function \"%s\"", ctx->proname);
 }
 
 /* ---------------------------------------------------------------------
@@ -482,6 +537,20 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 		int			save_call_ntrf = plruby_call_ntransforms;
 		plruby_transform_info *save_arg_trf = plruby_arg_transforms;
 		int			save_arg_ntrf = plruby_arg_ntransforms;
+		ErrorContextCallback ecb;
+		plruby_error_ctx errctx;
+
+		/*
+		 * Add a "CONTEXT: PL/Ruby function ..." line to any error raised while
+		 * this function compiles or runs.  The name is resolved now (cheap
+		 * syscache lookup) so it is stable across nested calls.
+		 */
+		errctx.proname = get_func_name(fcinfo->flinfo->fn_oid);
+		errctx.inline_block = false;
+		ecb.callback = plruby_error_callback;
+		ecb.arg = (void *) &errctx;
+		ecb.previous = error_context_stack;
+		error_context_stack = &ecb;
 
 		PG_TRY();
 		{
@@ -517,6 +586,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 		}
 		PG_CATCH();
 		{
+			error_context_stack = ecb.previous;
 			plruby_call_transforms = save_call_trf;
 			plruby_call_ntransforms = save_call_ntrf;
 			plruby_arg_transforms = save_arg_trf;
@@ -525,6 +595,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 		}
 		PG_END_TRY();
 
+		error_context_stack = ecb.previous;
 		plruby_call_transforms = save_call_trf;
 		plruby_call_ntransforms = save_call_ntrf;
 		plruby_arg_transforms = save_arg_trf;
@@ -1010,6 +1081,14 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 	for (i = 0, j = 0; i < desc->n_total_args;
 		 (j = IS_ARGMODE_OUT(desc->arg_argmode[i]) ? j : j + 1), i++)
 	{
+		/*
+		 * The type used to shape the Ruby value.  For a polymorphic pseudo
+		 * argument (anyelement/anyarray/anycompatible/anycompatiblearray) it is
+		 * the concrete type resolved at call time, so the value arrives as its
+		 * native Ruby type (an Array for array types) rather than as text.
+		 */
+		Oid			argtype = desc->arg_type[i];
+
 		if (IS_ARGMODE_OUT(desc->arg_argmode[i]))
 		{
 			rb_ary_push(args, Qnil);
@@ -1033,8 +1112,9 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 			HeapTuple	typeTup;
 			Form_pg_type typeStruct;
 
-			typeTup = SearchSysCache1(TYPEOID,
-									  ObjectIdGetDatum(get_fn_expr_argtype(fcinfo->flinfo, j)));
+			/* Resolve the polymorphic type to its concrete call-time type. */
+			argtype = get_fn_expr_argtype(fcinfo->flinfo, j);
+			typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(argtype));
 			typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
 			fmgr_info_cxt(typeStruct->typoutput, &(desc->arg_out_func[i]),
 						  TopMemoryContext);
@@ -1070,7 +1150,7 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 				rb_ary_push(args, Qnil);
 			else
 			{
-				Oid			elemtype = get_element_type(desc->arg_type[i]);
+				Oid			elemtype = get_element_type(argtype);
 				Oid			etrf = plruby_transform_fromsql(elemtype);
 
 				if (OidIsValid(etrf))
@@ -1089,8 +1169,7 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 						rb_ary_push(args, plruby_array_from_pg(tmp, elemtype));
 					else
 						rb_ary_push(args,
-									plruby_scalar_from_cstring(tmp,
-															   desc->arg_type[i]));
+									plruby_scalar_from_cstring(tmp, argtype));
 					pfree(tmp);
 				}
 			}
@@ -1167,6 +1246,17 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 				free(prodesc->transforms);
 				free(prodesc);
 				prodesc = NULL;
+
+				/*
+				 * Drop the stale cache entry now that its descriptor is freed.
+				 * The rebuild below re-adds it on success; if the rebuild
+				 * instead errors out (an unsupported return type, a compile
+				 * failure, ...), the cache no longer points at freed memory,
+				 * so the next call recompiles cleanly instead of dereferencing
+				 * a dangling pointer.
+				 */
+				rb_hash_delete(plruby_proc_cache,
+							   rb_str_new_cstr(internal_proname));
 			}
 		}
 	}
@@ -1227,7 +1317,12 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 				if (procStruct->prorettype == VOIDOID ||
 					procStruct->prorettype == RECORDOID ||
 					procStruct->prorettype == ANYELEMENTOID ||
-					procStruct->prorettype == ANYARRAYOID)
+					procStruct->prorettype == ANYARRAYOID
+#if PG_VERSION_NUM >= 130000
+					|| procStruct->prorettype == ANYCOMPATIBLEOID
+					|| procStruct->prorettype == ANYCOMPATIBLEARRAYOID
+#endif
+					)
 					prodesc->ret_type |= PL_PSEUDO;
 				else if (procStruct->prorettype == TRIGGEROID)
 				{
@@ -1254,7 +1349,11 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 			if (typtype == TYPTYPE_COMPOSITE || procStruct->prorettype == RECORDOID)
 				prodesc->ret_type |= PL_TUPLE;
 
-			if (procStruct->prorettype == ANYARRAYOID)
+			if (procStruct->prorettype == ANYARRAYOID
+#if PG_VERSION_NUM >= 130000
+				|| procStruct->prorettype == ANYCOMPATIBLEARRAYOID
+#endif
+				)
 				prodesc->ret_type |= PL_ARRAY;
 			else if (typlen == -1 && get_element_type(procStruct->prorettype))
 				prodesc->ret_type |= PL_ARRAY;
@@ -1616,6 +1715,8 @@ plruby_inline_handler(PG_FUNCTION_ARGS)
 	StringInfoData src;
 	int			state = 0;
 	VALUE		params[2];
+	ErrorContextCallback ecb;
+	plruby_error_ctx errctx;
 
 	plruby_init_all();
 
@@ -1626,6 +1727,14 @@ plruby_inline_handler(PG_FUNCTION_ARGS)
 
 	current_fcinfo = NULL;
 	plruby_session_init();
+
+	/* "CONTEXT: PL/Ruby anonymous code block" on any error below. */
+	errctx.proname = NULL;
+	errctx.inline_block = true;
+	ecb.callback = plruby_error_callback;
+	ecb.arg = (void *) &errctx;
+	ecb.previous = error_context_stack;
+	error_context_stack = &ecb;
 
 	snprintf(funcname, sizeof(funcname), "plruby_inline_%ld", ++inline_counter);
 
@@ -1653,6 +1762,8 @@ plruby_inline_handler(PG_FUNCTION_ARGS)
 	plruby_protected_call(plruby_recv, rb_intern(funcname), 2, params);
 
 	plruby_remove_method(funcname);
+
+	error_context_stack = ecb.previous;
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		ereport(ERROR,

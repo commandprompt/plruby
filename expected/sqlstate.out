@@ -8,6 +8,7 @@ CREATE FUNCTION es_custom() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT es_custom();
 ERROR:  custom failure
+CONTEXT:  PL/Ruby function "es_custom"
 -- A caught database error: it is a StandardError, its message names the
 -- offending object, its SQLSTATE is exposed, and the session keeps working
 -- afterwards.
@@ -89,6 +90,7 @@ SELECT es_structured();
 ERROR:  order rejected
 DETAIL:  order 42 exceeds the credit limit
 HINT:  raise the limit or split the order
+CONTEXT:  PL/Ruby function "es_structured"
 -- ...and a caller that rescues the resulting database error sees all three.
 CREATE FUNCTION es_catch_structured() RETURNS text LANGUAGE plruby AS $$
     begin
@@ -123,14 +125,17 @@ CREATE FUNCTION es_badstate() RETURNS void LANGUAGE plruby AS $$
 $$;
 SELECT es_badstate();
 ERROR:  pg_raise: invalid sqlstate "abc"
+CONTEXT:  PL/Ruby function "es_badstate"
 -- pg_raise and elog both reject an unknown level with a PL/Ruby error.
 CREATE FUNCTION es_badraise() RETURNS void LANGUAGE plruby AS $$
     pg_raise('BOGUS', 'nope')
 $$;
 SELECT es_badraise();
 ERROR:  pg_raise: incorrect log level "BOGUS"
+CONTEXT:  PL/Ruby function "es_badraise"
 CREATE FUNCTION es_badelog() RETURNS void LANGUAGE plruby AS $$
     elog('BOGUS', 'nope')
 $$;
 SELECT es_badelog();
 ERROR:  elog: unrecognized level "BOGUS"
+CONTEXT:  PL/Ruby function "es_badelog"

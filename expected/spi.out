@@ -58,6 +58,7 @@ CREATE FUNCTION spi_bad() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT spi_bad();
 ERROR:  relation "no_such_table" does not exist
+CONTEXT:  PL/Ruby function "spi_bad"
 -- The session is still usable afterwards.
 SELECT sum_ids();
  sum_ids 

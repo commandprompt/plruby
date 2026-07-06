@@ -17,7 +17,7 @@ MODULE_big = plruby
 OBJS = plruby.o plruby_io.o plruby_spi.o
 
 EXTENSION = plruby
-DATA = plruby--2.0.sql plruby--2.1.sql plruby--2.2.sql plruby--2.3.sql plruby--2.0--2.1.sql plruby--2.1--2.2.sql plruby--2.2--2.3.sql
+DATA = plruby--2.0.sql plruby--2.1.sql plruby--2.2.sql plruby--2.3.sql plruby--2.4.sql plruby--2.0--2.1.sql plruby--2.1--2.2.sql plruby--2.2--2.3.sql plruby--2.3--2.4.sql
 
 # Ruby compile/link flags, discovered via RbConfig.
 RUBY ?= ruby
@@ -34,7 +34,7 @@ PG_CPPFLAGS = -I$(RUBY_ARCHHDRDIR) -I$(RUBY_HDRDIR)
 SHLIB_LINK = -L$(RUBY_LIBDIR) -L$(RUBY_ARCHLIBDIR) $(RUBY_LIBARG) $(RUBY_LIBS)
 
 # Regression tests.  "init" installs the extension; keep it first.
-REGRESS = init base types numspecial bytea composite encoding datetime jsonb misc variadic shared trigger trigger2 spi raise errors sqlstate cargs pseudo srf out varnames validator replace classes prepare cursor hostile compat txn evttrig subxact modules quote require cookbook stdio startproc
+REGRESS = init base types numspecial bytea composite encoding datetime jsonb misc variadic shared trigger trigger2 spi raise errors sqlstate errcontext cargs pseudo anycompat srf out varnames validator replace classes prepare cursor hostile compat txn evttrig subxact modules quote require cookbook stdio startproc oninit
 
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)

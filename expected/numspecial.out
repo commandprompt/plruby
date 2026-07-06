@@ -63,6 +63,7 @@ SELECT n_fnan();
 CREATE FUNCTION n_overflow() RETURNS integer LANGUAGE plruby AS $$ 2 ** 40 $$;
 SELECT n_overflow();
 ERROR:  value "1099511627776" is out of range for type integer
+CONTEXT:  PL/Ruby function "n_overflow"
 -- ...but the same value fits bigint, and arbitrary precision fits numeric.
 CREATE FUNCTION n_big() RETURNS bigint LANGUAGE plruby AS $$ 2 ** 40 $$;
 SELECT n_big();

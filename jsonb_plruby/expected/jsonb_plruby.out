@@ -163,6 +163,7 @@ LANGUAGE plruby AS $$
 $$;
 SELECT jt_bad();
 ERROR:  cannot transform Ruby object of class Time to jsonb
+CONTEXT:  PL/Ruby function "jt_bad"
 -- Non-finite floats cannot become jsonb numbers.
 CREATE FUNCTION jt_inf() RETURNS jsonb
 TRANSFORM FOR TYPE jsonb
@@ -171,6 +172,7 @@ LANGUAGE plruby AS $$
 $$;
 SELECT jt_inf();
 ERROR:  cannot transform infinity to jsonb
+CONTEXT:  PL/Ruby function "jt_inf"
 -- The transform reaches nested contexts: SETOF rows via return_next...
 CREATE FUNCTION jt_batches(jsonb) RETURNS SETOF jsonb
 TRANSFORM FOR TYPE jsonb

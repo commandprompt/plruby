@@ -1,0 +1,27 @@
+--
+-- Error CONTEXT lines: an error raised while PL/Ruby code runs carries a
+-- "CONTEXT: PL/Ruby function ..." line (or the anonymous-block variant),
+-- like every other procedural language.
+--
+CREATE FUNCTION ec_boom() RETURNS int LANGUAGE plruby AS $$
+    raise 'kaboom'
+$$;
+-- The CONTEXT line names the function.
+SELECT ec_boom();
+ERROR:  kaboom
+CONTEXT:  PL/Ruby function "ec_boom"
+-- A function reached through spi_exec reports its own frame (the inner
+-- error is caught by SPI and re-raised in the caller).
+CREATE FUNCTION ec_outer() RETURNS int LANGUAGE plruby AS $$
+    spi_exec('SELECT ec_boom()')
+    0
+$$;
+SELECT ec_outer();
+ERROR:  kaboom
+CONTEXT:  PL/Ruby function "ec_outer"
+-- An anonymous DO block reports an anonymous-code-block context.
+DO $$ raise 'do boom' $$ LANGUAGE plruby;
+ERROR:  do boom
+CONTEXT:  PL/Ruby anonymous code block
+DROP FUNCTION ec_outer();
+DROP FUNCTION ec_boom();

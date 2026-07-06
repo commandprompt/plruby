@@ -56,6 +56,7 @@ CREATE FUNCTION mood_bad() RETURNS mt_mood LANGUAGE plruby AS $$
 $$;
 SELECT mood_bad();
 ERROR:  invalid input value for enum mt_mood: "ecstatic"
+CONTEXT:  PL/Ruby function "mood_bad"
 -- Domains: values returned into a domain are checked by its constraint.
 CREATE DOMAIN mt_posint AS int CHECK (VALUE > 0);
 CREATE FUNCTION pos_ok(int) RETURNS mt_posint LANGUAGE plruby AS $$
@@ -69,6 +70,7 @@ SELECT pos_ok(5);
 
 SELECT pos_ok(-5);
 ERROR:  value for domain mt_posint violates check constraint "mt_posint_check"
+CONTEXT:  PL/Ruby function "pos_ok"
 -- A domain-typed argument arrives as its base type's Ruby value (the
 -- domain's constraints were already enforced when the value was created).
 CREATE FUNCTION pos_class(mt_posint) RETURNS text LANGUAGE plruby AS $$

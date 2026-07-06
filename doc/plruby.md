@@ -30,7 +30,7 @@ non-thread-safe embedding).
 - [Quoting helpers](#quoting-helpers)
 - [Messaging: elog and pg_raise](#messaging-elog-and-pg_raise)
 - [Shared data: `$_SHARED`](#shared-data-_shared)
-- [Session initialization: modules and start_proc](#session-initialization-modules-and-start_proc)
+- [Session initialization: on_init, modules and start_proc](#session-initialization-on_init-modules-and-start_proc)
 - [Errors and exceptions](#errors-and-exceptions)
 - [Security](#security)
 
@@ -222,6 +222,12 @@ SELECT * FROM add_sub(10, 4);   -- sum=14, diff=6
 Named arguments are aliased as locals only when the name is a valid Ruby
 local-variable name (lowercase/underscore start). Others remain reachable
 positionally through `args`.
+
+**Polymorphic types.** `anyelement` and `anyarray`, and (on PostgreSQL 13 and
+newer) `anycompatible` and `anycompatiblearray`, are accepted as argument and
+return types. The concrete type is resolved at call time, so an argument
+arrives as its native Ruby value (an `Array` for the array types) and the
+return value converts back through the resolved type.
 
 ## Set-returning functions
 
@@ -499,10 +505,23 @@ CREATE FUNCTION get_shared(key text) RETURNS text LANGUAGE plruby AS $$
 $$;
 ```
 
-## Session initialization: modules and start_proc
+## Session initialization: on_init, modules and start_proc
 
-Two mechanisms let you run Ruby setup code the first time PL/Ruby is used in a
-session.
+Three mechanisms let you run Ruby setup code the first time PL/Ruby is used in a
+session. They run in this order: `on_init`, then modules, then `start_proc`.
+
+**on_init.** The `plruby.on_init` configuration setting is a snippet of Ruby
+source evaluated at the top level when the interpreter is first initialized,
+before modules and `start_proc`. It is the counterpart of `plperl.on_init`, and
+the natural place for `require`s and helper definitions that later setup relies
+on:
+
+```sql
+SET plruby.on_init = 'require %q{json}; def tag(s); "[#{s}]"; end';
+```
+
+Like `start_proc`, it is `SUSET` (only a superuser can set it). A constant or
+top-level method it defines is visible to every function body in the session.
 
 **Modules.** If a table named `plruby_modules(modname text, modseq int, modsrc
 text)` exists, its rows are evaluated at the top level (ordered by `modname`,
@@ -537,7 +556,9 @@ an invalid body is rejected with the Ruby parse error.
 At run time, an uncaught Ruby exception (for example, calling an undefined
 method or a `TypeError`) is reported as a PostgreSQL `ERROR`, aborting the
 statement. You can raise an error yourself with `raise`, `elog('ERROR', ...)`,
-or `pg_raise('error', ...)`.
+or `pg_raise('error', ...)`. Like every other procedural language, the error
+carries a `CONTEXT: PL/Ruby function "name"` line (or `PL/Ruby anonymous code
+block` for a `DO` block) identifying the code that raised it.
 
 A database error raised through the SPI functions (a failed `spi_exec`, a
 constraint violation, and so on) arrives as a rescuable `PLRuby::Error`. The

@@ -1,0 +1,62 @@
+--
+-- anycompatible / anycompatiblearray polymorphic pseudo-types (PostgreSQL
+-- 13+).  On PostgreSQL 11 and 12 the types do not exist; the alternate
+-- expected file anycompat_1.out matches that case.
+--
+CREATE FUNCTION ac_identity(anycompatible) RETURNS anycompatible LANGUAGE plruby AS $$
+    args[0]
+$$;
+SELECT ac_identity(42);
+ ac_identity 
+-------------
+          42
+(1 row)
+
+SELECT ac_identity('hello'::text);
+ ac_identity 
+-------------
+ hello
+(1 row)
+
+SELECT ac_identity(3.5::float8);
+ ac_identity 
+-------------
+         3.5
+(1 row)
+
+-- anycompatible unifies its arguments to a common type before the call.
+CREATE FUNCTION ac_max2(anycompatible, anycompatible) RETURNS anycompatible LANGUAGE plruby AS $$
+    a, b = args
+    a >= b ? a : b
+$$;
+SELECT ac_max2(3, 7);
+ ac_max2 
+---------
+       7
+(1 row)
+
+SELECT ac_max2(2.5::float8, 1);
+ ac_max2 
+---------
+     2.5
+(1 row)
+
+-- anycompatiblearray: the array arrives as a Ruby Array and returns unchanged.
+CREATE FUNCTION ac_arr(anycompatiblearray) RETURNS anycompatiblearray LANGUAGE plruby AS $$
+    args[0]
+$$;
+SELECT ac_arr(ARRAY[1, 2, 3]);
+ ac_arr  
+---------
+ {1,2,3}
+(1 row)
+
+SELECT ac_arr(ARRAY['a', 'b']::text[]);
+ ac_arr 
+--------
+ {a,b}
+(1 row)
+
+DROP FUNCTION ac_identity(anycompatible);
+DROP FUNCTION ac_max2(anycompatible, anycompatible);
+DROP FUNCTION ac_arr(anycompatiblearray);

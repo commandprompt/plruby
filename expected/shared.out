@@ -56,6 +56,7 @@ CREATE FUNCTION stash_then_fail() RETURNS int LANGUAGE plruby AS $$
 $$;
 SELECT stash_then_fail();
 ERROR:  deliberate failure
+CONTEXT:  PL/Ruby function "stash_then_fail"
 SELECT get_shared('survivor');
  get_shared 
 ------------
