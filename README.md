@@ -4,6 +4,7 @@
 
 **Write PostgreSQL functions, triggers, and procedures in Ruby.**
 
+[![CI](https://github.com/commandprompt/plruby/actions/workflows/ci.yml/badge.svg)](https://github.com/commandprompt/plruby/actions/workflows/ci.yml)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-11_to_18-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org/)
 [![Tests](https://img.shields.io/badge/tests-20_passing-brightgreen)](sql/)

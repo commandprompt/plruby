@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: PG ${{ matrix.pg }} / Ruby ${{ matrix.ruby }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # PGDG publishes 12+ for noble; PG 11 is verified out-of-band.
+        pg: [12, 13, 14, 15, 16, 17, 18]
+        ruby: [system]          # noble's ruby-dev (3.2, shared library)
+        include:
+          # Ruby C-API drift coverage on the newest PostgreSQL
+          - pg: 18
+            ruby: '3.3'
+          - pg: 18
+            ruby: '3.4'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system Ruby
+        if: matrix.ruby == 'system'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby-dev
+
+      - name: Install Ruby ${{ matrix.ruby }}
+        if: matrix.ruby != 'system'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+
+      - name: Install PostgreSQL ${{ matrix.pg }} (PGDG)
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y \
+            postgresql-${{ matrix.pg }} \
+            postgresql-server-dev-${{ matrix.pg }}
+
+      - name: Build and install plruby + jsonb_plruby
+        run: |
+          export PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+          export RUBY="$(command -v ruby)"
+          make PG_CONFIG="$PG_CONFIG" RUBY="$RUBY"
+          sudo make PG_CONFIG="$PG_CONFIG" RUBY="$RUBY" install
+          make -C jsonb_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY"
+          sudo make -C jsonb_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY" install
+
+      - name: Start a test cluster
+        run: |
+          sudo pg_createcluster ${{ matrix.pg }} test -p 5555 --start
+          sudo -u postgres psql -p 5555 -c "CREATE ROLE runner SUPERUSER LOGIN"
+
+      - name: Run the plruby regression suite
+        run: |
+          make PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config installcheck
+        env:
+          PGPORT: '5555'
+
+      - name: Run the jsonb_plruby regression suite
+        run: |
+          make -C jsonb_plruby PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config installcheck
+        env:
+          PGPORT: '5555'
+
+      - name: Show regression diffs on failure
+        if: failure()
+        run: |
+          echo "===== plruby regression.diffs ====="
+          cat regression.diffs 2>/dev/null || echo "(none)"
+          echo "===== jsonb_plruby regression.diffs ====="
+          cat jsonb_plruby/regression.diffs 2>/dev/null || echo "(none)"
