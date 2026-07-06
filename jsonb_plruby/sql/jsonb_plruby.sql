@@ -152,6 +152,45 @@ LANGUAGE plruby AS $$
 $$;
 SELECT jt_arr(ARRAY['{"a": 1}'::jsonb, '{"b": 2, "c": 3}'::jsonb]);
 
+-- Triggers that declare the transform get $_TD jsonb columns as Ruby data,
+-- and 'MODIFY' accepts Ruby data back.
+CREATE TABLE jt_events (id int, payload jsonb);
+CREATE FUNCTION jt_stamp() RETURNS trigger
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    doc = $_TD['new']['payload']
+    elog('NOTICE', "payload is a #{doc.class.name} with #{doc.size} key(s)")
+    $_TD['new']['payload'] = doc.merge('audited' => true, 'op' => $_TD['event'])
+    'MODIFY'
+$$;
+CREATE TRIGGER jt_events_stamp BEFORE INSERT OR UPDATE ON jt_events
+    FOR EACH ROW EXECUTE PROCEDURE jt_stamp();
+INSERT INTO jt_events VALUES (1, '{"amount": 42}');
+UPDATE jt_events SET payload = '{"amount": 99}' WHERE id = 1;
+SELECT id, payload FROM jt_events;
+
+-- A DELETE trigger reads the old row's jsonb as Ruby data too.
+CREATE FUNCTION jt_obituary() RETURNS trigger
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    elog('NOTICE', "deleting amount=#{$_TD['old']['payload']['amount']}")
+    nil
+$$;
+CREATE TRIGGER jt_events_bye BEFORE DELETE ON jt_events
+    FOR EACH ROW EXECUTE PROCEDURE jt_obituary();
+DELETE FROM jt_events;
+
+-- Without the clause, a trigger sees the String form, as always.
+CREATE FUNCTION jt_plain_trig() RETURNS trigger LANGUAGE plruby AS $$
+    elog('NOTICE', "payload is a #{$_TD['new']['payload'].class.name}")
+    nil
+$$;
+CREATE TRIGGER jt_events_plain BEFORE INSERT ON jt_events
+    FOR EACH ROW EXECUTE PROCEDURE jt_plain_trig();
+DROP TRIGGER jt_events_stamp ON jt_events;
+INSERT INTO jt_events VALUES (2, '{"x": 1}');
+DROP TABLE jt_events;
+
 -- Without the TRANSFORM clause, jsonb still travels as a String.
 CREATE FUNCTION jt_untransformed(jsonb) RETURNS text LANGUAGE plruby AS $$
     args[0].class.name

@@ -19,8 +19,8 @@ with the rationale given.
 | Procedures with transaction control     | ✅ | ✅ | `CALL` a `PROCEDURE`; `spi_commit`/`spi_rollback` in a non-atomic context |
 | `VARIADIC` functions                    | ❌ | ✅ | The variadic tail arrives as one Ruby `Array` (`VARIADIC "any"` unsupported) |
 | `INSTEAD OF` / `TRUNCATE` triggers      | ✅ | ✅ | |
-| `jsonb` transform (`TRANSFORM FOR TYPE`) | `jsonb_plperl` | `jsonb_plruby` | Native `Hash`/`Array` for jsonb; PL/Ruby keeps big integers exact |
-| `hstore` transform                      | `hstore_plperl` | `hstore_plruby` | Native Ruby `Hash` (String keys/values, `nil` for NULL) |
+| `jsonb` transform (`TRANSFORM FOR TYPE`) | `jsonb_plperl` | `jsonb_plruby` | Native `Hash`/`Array` for jsonb; PL/Ruby keeps big integers exact and, unlike PL/Perl, also applies transforms in composite fields, SRF rows, OUT params, and trigger `$_TD` data |
+| `hstore` transform                      | `hstore_plperl` | `hstore_plruby` | Native Ruby `Hash` (String keys/values, `nil` for NULL); same extended reach as the jsonb transform |
 | Trusted (sandboxed) variant             | `plperl` (Safe.pm) | ❌ by design | Ruby's `$SAFE`/tainting were removed in 3.0; PL/Ruby is untrusted/superuser-only (see [Security](plruby.md#security)) |
 
 ## Built-in functions

@@ -175,9 +175,11 @@ Returned Hash keys and Symbols become JSON strings; any other `Numeric`
 objects (and non-finite Floats) are rejected with a clear error. The
 transform applies everywhere values cross between SQL and Ruby: plain
 arguments and returns, fields of composite arguments and results, OUT
-parameters, `jsonb[]` elements, and `return_next` rows (including
-`RETURNS SETOF jsonb`). Rows read through `spi_exec`/`spi_query` are *not*
-affected — SPI results keep their ordinary representation.
+parameters, `jsonb[]` elements, `return_next` rows (including
+`RETURNS SETOF jsonb`), and — when a *trigger* function declares the
+clause — the `$_TD['new']`/`$_TD['old']` rows and the `'MODIFY'` result.
+Rows read through `spi_exec`/`spi_query` are *not* affected — SPI results
+keep their ordinary representation.
 
 The **`hstore_plruby`** extension does the same for `hstore`
 (`TRANSFORM FOR TYPE hstore`): arguments arrive as a `Hash` of String keys

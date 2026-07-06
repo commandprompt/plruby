@@ -487,9 +487,14 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 		{
 			if (CALLED_AS_TRIGGER(fcinfo))
 			{
+				/*
+				 * A trigger function that declares TRANSFORM FOR TYPE gets
+				 * transformed $_TD rows and 'MODIFY' conversion; without the
+				 * clause the list is empty and nothing changes.
+				 */
 				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, true, false);
-				plruby_call_transforms = NULL;
-				plruby_call_ntransforms = 0;
+				plruby_call_transforms = desc->transforms;
+				plruby_call_ntransforms = desc->n_transforms;
 				retval = plruby_trigger_handler(fcinfo, desc);
 			}
 			else if (CALLED_AS_EVENT_TRIGGER(fcinfo))
@@ -881,7 +886,16 @@ plruby_trigger_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 	VALUE		result;
 	Datum		retval = (Datum) 0;
 
+	/*
+	 * FROM-SQL transforms apply only while $_TD is built (so SPI reads in
+	 * the body are unaffected); the call handler's PG_CATCH restores this
+	 * on error.
+	 */
+	plruby_arg_transforms = desc->transforms;
+	plruby_arg_ntransforms = desc->n_transforms;
 	td = plruby_trig_build_args(fcinfo);
+	plruby_arg_transforms = NULL;
+	plruby_arg_ntransforms = 0;
 
 	/* Expose $_TD to the body; save/restore for nested-trigger re-entrancy */
 	save_td = rb_gv_get("$_TD");

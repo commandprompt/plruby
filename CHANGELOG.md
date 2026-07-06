@@ -20,6 +20,11 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
   including `RETURNS SETOF jsonb`/`hstore`. SPI results are deliberately
   unaffected. (The SRF row builder is now datum-based, which also lets
   `return_next` rows carry nested composite values.)
+- **Transforms in triggers.** A trigger function that declares
+  `TRANSFORM FOR TYPE` receives transformed columns in `$_TD['new']`/
+  `$_TD['old']` and may put native Ruby data back via `'MODIFY'` — going
+  beyond PL/Perl, whose transforms skip trigger data. Without the clause,
+  triggers behave exactly as before.
 - **`hstore_plruby`** — a companion extension (in `hstore_plruby/`) providing
   `TRANSFORM FOR TYPE hstore`: opted-in functions receive hstore arguments as
   a Ruby `Hash` of String keys to String-or-`nil` values and may return a

@@ -78,6 +78,24 @@ LANGUAGE plruby AS $$
 $$;
 SELECT * FROM ht_rows('x=>hi, y=>NULL');
 
+-- Triggers that declare the transform get $_TD hstore columns as Hashes,
+-- and 'MODIFY' accepts a Hash back.
+CREATE TABLE ht_items (id int, attrs hstore);
+CREATE FUNCTION ht_normalize() RETURNS trigger
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    attrs = $_TD['new']['attrs']
+    elog('NOTICE', "attrs is a #{attrs.class.name}")
+    $_TD['new']['attrs'] = attrs.to_h { |k, v| [k.downcase, v] }
+                                .merge('checked' => 'yes')
+    'MODIFY'
+$$;
+CREATE TRIGGER ht_items_norm BEFORE INSERT ON ht_items
+    FOR EACH ROW EXECUTE PROCEDURE ht_normalize();
+INSERT INTO ht_items VALUES (1, 'Color=>red, SIZE=>xl');
+SELECT id, attrs FROM ht_items;
+DROP TABLE ht_items;
+
 -- Without the TRANSFORM clause, hstore still travels as a String.
 CREATE FUNCTION ht_untransformed(hstore) RETURNS text LANGUAGE plruby AS $$
     args[0].class.name
