@@ -1,0 +1,65 @@
+--
+-- hstore <-> Ruby Hash transform.  Functions must opt in with
+-- TRANSFORM FOR TYPE hstore.
+--
+CREATE EXTENSION hstore_plruby CASCADE;
+
+-- An hstore argument arrives as a Hash of String => String/nil.
+CREATE FUNCTION ht_classes(hstore) RETURNS text
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    args[0].sort.map { |k, v|
+        "#{k.class.name}(#{k})=#{v.nil? ? 'nil' : "#{v.class.name}(#{v})"}"
+    }.join(' ')
+$$;
+SELECT ht_classes('a=>1, b=>NULL, "key with spaces"=>"and \"quotes\""'::hstore);
+
+-- Round-trip: modify and return; nil becomes an hstore NULL.
+CREATE FUNCTION ht_upcase(hstore) RETURNS hstore
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    args[0].to_h { |k, v| [k.upcase, v&.upcase] }
+$$;
+SELECT ht_upcase('name=>widget, note=>NULL');
+
+-- Build an hstore from Ruby data: keys and values are stringified.
+CREATE FUNCTION ht_build(int) RETURNS hstore
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    {:n => args[0], 'double' => args[0] * 2, 'ok' => args[0].odd?, 'gone' => nil}
+$$;
+SELECT ht_build(3);
+SELECT ht_build(4)->'double' AS doubled;
+
+-- Idiomatic Hash work: merge and prune in one step.
+CREATE FUNCTION ht_merge(a hstore, b hstore) RETURNS hstore
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    a.merge(b).reject { |_, v| v.nil? }
+$$;
+SELECT ht_merge('a=>1, b=>2', 'b=>20, c=>NULL, d=>4');
+
+-- The empty hstore round-trips.
+CREATE FUNCTION ht_empty(hstore) RETURNS hstore
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    args[0]
+$$;
+SELECT ht_empty(''::hstore);
+
+-- A NULL hstore argument is nil; returning nil is SQL NULL.
+SELECT ht_empty(NULL) IS NULL AS null_roundtrip;
+
+-- Returning something other than a Hash is rejected cleanly.
+CREATE FUNCTION ht_bad() RETURNS hstore
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    ['not', 'a', 'hash']
+$$;
+SELECT ht_bad();
+
+-- Without the TRANSFORM clause, hstore still travels as a String.
+CREATE FUNCTION ht_untransformed(hstore) RETURNS text LANGUAGE plruby AS $$
+    args[0].class.name
+$$;
+SELECT ht_untransformed('a=>1'::hstore);

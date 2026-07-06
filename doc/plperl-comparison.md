@@ -20,7 +20,7 @@ with the rationale given.
 | `VARIADIC` functions                    | ❌ | ✅ | The variadic tail arrives as one Ruby `Array` (`VARIADIC "any"` unsupported) |
 | `INSTEAD OF` / `TRUNCATE` triggers      | ✅ | ✅ | |
 | `jsonb` transform (`TRANSFORM FOR TYPE`) | `jsonb_plperl` | `jsonb_plruby` | Native `Hash`/`Array` for jsonb; PL/Ruby keeps big integers exact |
-| `hstore` transform                      | `hstore_plperl` | ❌ | Use `hstore_to_jsonb` + `jsonb_plruby`, or the text form |
+| `hstore` transform                      | `hstore_plperl` | `hstore_plruby` | Native Ruby `Hash` (String keys/values, `nil` for NULL) |
 | Trusted (sandboxed) variant             | `plperl` (Safe.pm) | ❌ by design | Ruby's `$SAFE`/tainting were removed in 3.0; PL/Ruby is untrusted/superuser-only (see [Security](plruby.md#security)) |
 
 ## Built-in functions

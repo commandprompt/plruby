@@ -1,0 +1,6 @@
+# hstore transform for PL/Ruby  (MIT License; see LICENSE)
+comment = 'transform between hstore and Ruby Hashes'
+default_version = '1.0'
+module_pathname = '$libdir/hstore_plruby'
+requires = 'hstore, plruby'
+relocatable = true

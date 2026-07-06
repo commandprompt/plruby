@@ -173,6 +173,12 @@ objects (and non-finite Floats) are rejected with a clear error. The
 transform applies to top-level arguments and return values; jsonb inside a
 composite, OUT parameters, and `return_next` rows still use the String form.
 
+The **`hstore_plruby`** extension does the same for `hstore`
+(`TRANSFORM FOR TYPE hstore`): arguments arrive as a `Hash` of String keys
+to String-or-`nil` values, and a returned `Hash` becomes an hstore (keys
+and values are stringified; `nil` becomes an hstore `NULL`). It requires
+the `hstore` extension and is built from the `hstore_plruby/` subdirectory.
+
 ## Arguments
 
 PL/Ruby supports the full range of argument modes.

@@ -5,6 +5,17 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`hstore_plruby`** — a companion extension (in `hstore_plruby/`) providing
+  `TRANSFORM FOR TYPE hstore`: opted-in functions receive hstore arguments as
+  a Ruby `Hash` of String keys to String-or-`nil` values and may return a
+  `Hash` into an hstore result (keys/values stringified, `nil` ↔ `NULL`).
+  Implemented against hstore's public SQL functions, so it needs no hstore
+  headers and works with the packaged hstore on PostgreSQL 11–18.
+
 ## [2.2.0] — 2026-07-05
 
 Native jsonb, modern Ruby, and CI. The `jsonb_plruby` companion extension
