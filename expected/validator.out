@@ -5,7 +5,7 @@
 CREATE FUNCTION bad_syntax() RETURNS int LANGUAGE plruby AS $$
     def (
 $$;
-ERROR:  function "bad_syntax" does not validate: eval:5: syntax error, unexpected `end'
+ERROR:  function "bad_syntax" does not validate: eval:5: syntax error, unexpected '}'
 -- A well-formed body is accepted.
 CREATE FUNCTION good_syntax() RETURNS int LANGUAGE plruby AS $$
     1 + 1

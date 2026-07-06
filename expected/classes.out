@@ -1,0 +1,76 @@
+--
+-- Inline class and module definitions.  Bodies run inside a block, where
+-- `class`/`module` are legal; definitions land at top level, so they are
+-- shared session-wide (like plruby_modules) and persist across calls.
+--
+CREATE FUNCTION cls_define_and_use(int, int) RETURNS text LANGUAGE plruby AS $$
+    class PLRubyTestVec
+        attr_reader :x, :y
+        def initialize(x, y) = (@x, @y = x, y)
+        def +(o) = PLRubyTestVec.new(@x + o.x, @y + o.y)
+        def to_s = "(#{@x},#{@y})"
+    end
+    (PLRubyTestVec.new(args[0], args[1]) + PLRubyTestVec.new(10, 20)).to_s
+$$;
+SELECT cls_define_and_use(1, 2);
+ cls_define_and_use 
+--------------------
+ (11,22)
+(1 row)
+
+-- The class defined above is visible from a different function.
+CREATE FUNCTION cls_reuse() RETURNS text LANGUAGE plruby AS $$
+    PLRubyTestVec.new(7, 8).to_s
+$$;
+SELECT cls_reuse();
+ cls_reuse 
+-----------
+ (7,8)
+(1 row)
+
+-- Modules and constants work too, and reopening a class is fine.
+CREATE FUNCTION cls_module() RETURNS text LANGUAGE plruby AS $$
+    module PLRubyTestUtil
+        LIMIT = 40
+        def self.clamp(n) = [n, LIMIT].min
+    end
+    class PLRubyTestVec
+        def manhattan = x.abs + y.abs
+    end
+    "clamped=#{PLRubyTestUtil.clamp(99)} dist=#{PLRubyTestVec.new(-3, 4).manhattan}"
+$$;
+SELECT cls_module();
+    cls_module     
+-------------------
+ clamped=40 dist=7
+(1 row)
+
+-- Struct/Comparable-style one-liners inside a DO block.
+DO $$
+    class PLRubyTestPoint < Struct.new(:x, :y)
+        include Comparable
+        def <=>(o) = (x * x + y * y) <=> (o.x * o.x + o.y * o.y)
+    end
+    pts = [PLRubyTestPoint.new(3, 4), PLRubyTestPoint.new(1, 1)]
+    elog('NOTICE', "nearest=#{pts.min.to_a.inspect}")
+$$ LANGUAGE plruby;
+NOTICE:  nearest=[1, 1]
+-- Classes work in trigger bodies as well.
+CREATE TABLE cls_t (v text);
+CREATE FUNCTION cls_trig() RETURNS trigger LANGUAGE plruby AS $$
+    class PLRubyTestTag
+        def self.tag(s) = "[#{s}]"
+    end
+    $_TD['new']['v'] = PLRubyTestTag.tag($_TD['new']['v'])
+    'MODIFY'
+$$;
+CREATE TRIGGER cls_t_trig BEFORE INSERT ON cls_t
+    FOR EACH ROW EXECUTE PROCEDURE cls_trig();
+INSERT INTO cls_t VALUES ('hello');
+SELECT * FROM cls_t;
+    v    
+---------
+ [hello]
+(1 row)
+
+DROP TABLE cls_t;

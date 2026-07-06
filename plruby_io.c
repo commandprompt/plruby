@@ -29,6 +29,93 @@
 #include <ruby/encoding.h>
 
 /* ---------------------------------------------------------------------
+ * TRANSFORM FOR TYPE support (see plruby_io.h for the scoping rules)
+ * ------------------------------------------------------------------- */
+
+plruby_transform_info *plruby_call_transforms = NULL;
+int			plruby_call_ntransforms = 0;
+plruby_transform_info *plruby_arg_transforms = NULL;
+int			plruby_arg_ntransforms = 0;
+
+Oid
+plruby_transform_tosql(Oid typid)
+{
+	int			i;
+
+	for (i = 0; i < plruby_call_ntransforms; i++)
+		if (plruby_call_transforms[i].typid == typid)
+			return plruby_call_transforms[i].tosql;
+	return InvalidOid;
+}
+
+Oid
+plruby_transform_fromsql(Oid typid)
+{
+	int			i;
+
+	for (i = 0; i < plruby_arg_ntransforms; i++)
+		if (plruby_arg_transforms[i].typid == typid)
+			return plruby_arg_transforms[i].fromsql;
+	return InvalidOid;
+}
+
+/*
+ * An array datum whose elements convert through a FromSQL transform
+ * function, rebuilt as a (possibly nested, per the array's dimensions)
+ * Ruby Array.
+ */
+static VALUE
+plruby_array_from_datum_walk(Datum *elems, bool *nulls, int *idx,
+							 int ndims, const int *dims, int depth,
+							 Oid fromsql_fn)
+{
+	VALUE		ary = rb_ary_new();
+	int			i;
+
+	for (i = 0; i < dims[depth]; i++)
+	{
+		if (depth + 1 < ndims)
+			rb_ary_push(ary, plruby_array_from_datum_walk(elems, nulls, idx,
+														  ndims, dims,
+														  depth + 1,
+														  fromsql_fn));
+		else
+		{
+			if (nulls[*idx])
+				rb_ary_push(ary, Qnil);
+			else
+				rb_ary_push(ary,
+							(VALUE) OidFunctionCall1(fromsql_fn, elems[*idx]));
+			(*idx)++;
+		}
+	}
+	return ary;
+}
+
+VALUE
+plruby_array_from_datum(Datum d, Oid elemtype, Oid fromsql_fn)
+{
+	ArrayType  *arr = DatumGetArrayTypeP(d);
+	int16		elmlen;
+	bool		elmbyval;
+	char		elmalign;
+	Datum	   *elems;
+	bool	   *nulls;
+	int			nelems;
+	int			ndims = ARR_NDIM(arr);
+	int			idx = 0;
+
+	if (ndims == 0)
+		return rb_ary_new();
+
+	get_typlenbyvalalign(elemtype, &elmlen, &elmbyval, &elmalign);
+	deconstruct_array(arr, elemtype, elmlen, elmbyval, elmalign,
+					  &elems, &nulls, &nelems);
+	return plruby_array_from_datum_walk(elems, nulls, &idx,
+										ndims, ARR_DIMS(arr), 0, fromsql_fn);
+}
+
+/* ---------------------------------------------------------------------
  * Scalar leaf conversion
  * ------------------------------------------------------------------- */
 
@@ -375,6 +462,14 @@ plruby_datum_from_value(VALUE val, Oid typeoid, int32 typmod, bool *isnull)
 	}
 	*isnull = false;
 
+	/* A transformed type converts through its ToSQL function. */
+	{
+		Oid			trf = plruby_transform_tosql(typeoid);
+
+		if (OidIsValid(trf))
+			return OidFunctionCall1(trf, (Datum) val);
+	}
+
 	/* An array type fed a Ruby Array: build an array datum recursively. */
 	elemtype = get_element_type(typeoid);
 	if (OidIsValid(elemtype) && RB_TYPE_P(val, T_ARRAY))
@@ -433,9 +528,14 @@ plruby_array_datum(VALUE val, Oid elemtype)
 
 	get_typlenbyvalalign(elemtype, &elmlen, &elmbyval, &elmalign);
 
-	if (type_is_rowtype(elemtype))
+	if (type_is_rowtype(elemtype) ||
+		OidIsValid(plruby_transform_tosql(elemtype)))
 	{
-		/* Composite elements: a plain 1-D array (no multidimensional descent). */
+		/*
+		 * Composite or transformed elements: a plain 1-D array, treating
+		 * each Ruby element (which may itself be an Array, e.g. a JSON
+		 * array) as one element -- no multidimensional descent.
+		 */
 		ndims = 1;
 		dims[0] = RARRAY_LEN(val);
 		lbs[0] = 1;
@@ -531,6 +631,29 @@ plruby_hash_from_tuple(HeapTuple tuple, TupleDesc tupdesc)
 		{
 			rb_hash_aset(h, rb_str_new_cstr(attname), Qnil);
 			continue;
+		}
+
+		/* A field of a transformed type converts through its FromSQL fn. */
+		{
+			Oid			trf = plruby_transform_fromsql(att->atttypid);
+
+			if (OidIsValid(trf))
+			{
+				rb_hash_aset(h, rb_str_new_cstr(attname),
+							 (VALUE) OidFunctionCall1(trf, attr));
+				continue;
+			}
+
+			/* ... or, for an array field, per element. */
+			trf = plruby_transform_fromsql(get_element_type(att->atttypid));
+			if (OidIsValid(trf))
+			{
+				rb_hash_aset(h, rb_str_new_cstr(attname),
+							 plruby_array_from_datum(attr,
+													 get_element_type(att->atttypid),
+													 trf));
+				continue;
+			}
 		}
 
 		/* A composite field: recurse into a nested Hash. */
@@ -671,45 +794,73 @@ HeapTuple
 plruby_srf_htup_from_value(VALUE val, AttInMetadata *attinmeta,
 						   MemoryContext cxt)
 {
+	TupleDesc	tupdesc = attinmeta->tupdesc;
 	MemoryContext oldcxt;
 	HeapTuple	ret;
-	char	  **values;
+	Datum	   *dvalues;
+	bool	   *nulls;
 	int			i = 0;
-	int			natts = attinmeta->tupdesc->natts;
+	int			natts = tupdesc->natts;
 
 	oldcxt = MemoryContextSwitchTo(cxt);
 
-	values = (char **) palloc0(natts * sizeof(char *));
+	dvalues = (Datum *) palloc0(natts * sizeof(Datum));
+	nulls = (bool *) palloc(natts * sizeof(bool));
+	for (i = 0; i < natts; i++)
+		nulls[i] = true;
 
 	if (RB_TYPE_P(val, T_HASH))
 	{
-		/* map by attribute name */
-		for (i = 0; i < natts; i++)
-		{
-			char	   *key = NameStr(TupleDescAttr(attinmeta->tupdesc, i)->attname);
-			VALUE		el = rb_hash_lookup2(val, rb_str_new_cstr(key), Qundef);
+		Form_pg_attribute att0 = TupleDescAttr(tupdesc, 0);
 
-			if (el == Qundef || NIL_P(el))
-				values[i] = NULL;
-			else
-				values[i] = plruby_value_to_cstring(el, true, true);
+		/*
+		 * A single transformed column (e.g. RETURNS SETOF jsonb) whose Hash
+		 * carries no matching column key: the Hash IS the value, for the
+		 * transform to consume.
+		 */
+		if (natts == 1 &&
+			OidIsValid(plruby_transform_tosql(att0->atttypid)) &&
+			rb_hash_lookup2(val, rb_str_new_cstr(NameStr(att0->attname)),
+							Qundef) == Qundef)
+			dvalues[0] = plruby_datum_from_value(val, att0->atttypid,
+												 att0->atttypmod, &nulls[0]);
+		else
+		{
+			/* map by attribute name */
+			for (i = 0; i < natts; i++)
+			{
+				Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+				VALUE		el = rb_hash_lookup2(val,
+												 rb_str_new_cstr(NameStr(att->attname)),
+												 Qundef);
+
+				if (el != Qundef)
+					dvalues[i] = plruby_datum_from_value(el, att->atttypid,
+														 att->atttypmod, &nulls[i]);
+			}
 		}
 	}
 	else if (RB_TYPE_P(val, T_ARRAY))
 	{
 		if (natts == 1)
 		{
-			Form_pg_attribute att = TupleDescAttr(attinmeta->tupdesc, 0);
+			Form_pg_attribute att = TupleDescAttr(tupdesc, 0);
 
-			/* single column: if it is itself an array type, pass the whole
-			 * Ruby array as the one value; otherwise use its first element */
-			if (att->attndims != 0 || OidIsValid(get_element_type(att->atttypid)))
-				values[0] = plruby_value_to_cstring(val, true, true);
+			/* single column: if it is itself an array type (or a transformed
+			 * type, e.g. jsonb, whose value may be a Ruby Array), pass the
+			 * whole Ruby array as the one value; otherwise use its first
+			 * element */
+			if (att->attndims != 0 ||
+				OidIsValid(get_element_type(att->atttypid)) ||
+				OidIsValid(plruby_transform_tosql(att->atttypid)))
+				dvalues[0] = plruby_datum_from_value(val, att->atttypid,
+													 att->atttypmod, &nulls[0]);
 			else
 			{
 				VALUE		el = (RARRAY_LEN(val) > 0) ? rb_ary_entry(val, 0) : Qnil;
 
-				values[0] = plruby_value_to_cstring(el, true, true);
+				dvalues[0] = plruby_datum_from_value(el, att->atttypid,
+													 att->atttypmod, &nulls[0]);
 			}
 		}
 		else
@@ -717,21 +868,30 @@ plruby_srf_htup_from_value(VALUE val, AttInMetadata *attinmeta,
 			long		n = RARRAY_LEN(val);
 
 			for (i = 0; i < natts && i < n; i++)
-				values[i] = plruby_value_to_cstring(rb_ary_entry(val, i), true, true);
+			{
+				Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+
+				dvalues[i] = plruby_datum_from_value(rb_ary_entry(val, i),
+													 att->atttypid,
+													 att->atttypmod, &nulls[i]);
+			}
 			if (n > natts)
 				elog(WARNING, "more elements in array than attributes in return type");
 		}
 	}
 	else
 	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, 0);
+
 		if (natts != 1)
 			ereport(ERROR,
 					(errmsg("returned value does not match the declared return type")));
-		values[0] = plruby_value_to_cstring(val, true, true);
+		dvalues[0] = plruby_datum_from_value(val, att->atttypid,
+											 att->atttypmod, &nulls[0]);
 	}
 
 	MemoryContextSwitchTo(oldcxt);
-	ret = BuildTupleFromCStrings(attinmeta, values);
+	ret = heap_form_tuple(tupdesc, dvalues, nulls);
 	MemoryContextReset(cxt);
 
 	return ret;

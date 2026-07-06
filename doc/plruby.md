@@ -38,13 +38,16 @@ and only superusers can create PL/Ruby functions. See [Security](#security).
 
 ## Writing functions
 
-The body of a `LANGUAGE plruby` function is a Ruby method body. Inside it you
-have:
+The body of a `LANGUAGE plruby` function runs as a top-level block. Inside it
+you have:
 
 - `args` — a 0-indexed Array of the call arguments.
 - `argc` — the number of declared arguments.
 - The function returns the value of its **last expression** (or an explicit
   `return`).
+- `class`, `module`, and `def` statements are allowed and define globally,
+  so a class defined in one function is usable from another for the rest of
+  the session (exactly like code loaded from `plruby_modules`).
 
 ```sql
 CREATE FUNCTION r_max(integer, integer) RETURNS integer
@@ -170,8 +173,11 @@ $$;
 Returned Hash keys and Symbols become JSON strings; any other `Numeric`
 (e.g. `BigDecimal`) serializes losslessly through its text form. Unsupported
 objects (and non-finite Floats) are rejected with a clear error. The
-transform applies to top-level arguments and return values; jsonb inside a
-composite, OUT parameters, and `return_next` rows still use the String form.
+transform applies everywhere values cross between SQL and Ruby: plain
+arguments and returns, fields of composite arguments and results, OUT
+parameters, `jsonb[]` elements, and `return_next` rows (including
+`RETURNS SETOF jsonb`). Rows read through `spi_exec`/`spi_query` are *not*
+affected — SPI results keep their ordinary representation.
 
 The **`hstore_plruby`** extension does the same for `hstore`
 (`TRANSFORM FOR TYPE hstore`): arguments arrive as a `Hash` of String keys

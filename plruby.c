@@ -86,10 +86,14 @@ typedef struct plruby_proc_desc
 	 * TRANSFORM FOR TYPE support: the FromSQL function for each argument and
 	 * the ToSQL function for the return value (InvalidOid when the function
 	 * declares no transform for that type).  A FromSQL function returns the
-	 * Ruby VALUE as a Datum; a ToSQL function accepts one.
+	 * Ruby VALUE as a Datum; a ToSQL function accepts one.  The full
+	 * resolved list (transforms/n_transforms, malloc'd) also backs nested
+	 * conversions: composite fields, array elements, and SRF rows.
 	 */
 	Oid			arg_transform[FUNC_MAX_ARGS];
 	Oid			ret_transform;
+	plruby_transform_info *transforms;
+	int			n_transforms;
 } plruby_proc_desc;
 
 /* Interpreter-wide Ruby objects (see plruby.h) */
@@ -256,11 +260,12 @@ plruby_protected_call(VALUE recv, ID mid, int argc, VALUE *argv)
 static void
 plruby_remove_method(const char *name)
 {
-	char		buf[128];
+	char		buf[192];
 	int			state = 0;
 
 	snprintf(buf, sizeof(buf),
-			 "Object.send(:remove_method, :%s) rescue nil", name);
+			 "PLRuby::PROCS.delete('%s'); "
+			 "Object.send(:remove_method, :%s) rescue nil", name, name);
 	rb_eval_string_protect(buf, &state);
 	if (state)
 		rb_set_errinfo(Qnil);
@@ -334,7 +339,8 @@ plruby_init(void)
 		plruby_vm_inited = true;
 	}
 
-	plruby_eval_string("module PLRuby; class Error < StandardError;"
+	plruby_eval_string("module PLRuby; PROCS = {};"
+					   " class Error < StandardError;"
 					   " attr_reader :sqlstate, :detail, :hint; end; end",
 					   "plruby: interpreter init");
 
@@ -465,23 +471,59 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 
 	plruby_session_init();
 
-	if (CALLED_AS_TRIGGER(fcinfo))
 	{
-		desc = plruby_compile_function(fcinfo->flinfo->fn_oid, true, false);
-		retval = plruby_trigger_handler(fcinfo, desc);
-	}
-	else if (CALLED_AS_EVENT_TRIGGER(fcinfo))
-	{
-		desc = plruby_compile_function(fcinfo->flinfo->fn_oid, false, true);
-		retval = plruby_event_trigger_handler(fcinfo, desc);
-	}
-	else
-	{
-		desc = plruby_compile_function(fcinfo->flinfo->fn_oid, false, false);
-		if (desc->retset)
-			retval = plruby_srf_handler(fcinfo, desc);
-		else
-			retval = plruby_func_handler(fcinfo, desc);
+		/*
+		 * Scope the function's TRANSFORM FOR TYPE list to this call,
+		 * saving/restoring for nested calls -- including when a nested
+		 * call's error is caught and rescued by the outer body, hence the
+		 * PG_CATCH.  Triggers and event triggers do not use transforms.
+		 */
+		plruby_transform_info *save_call_trf = plruby_call_transforms;
+		int			save_call_ntrf = plruby_call_ntransforms;
+		plruby_transform_info *save_arg_trf = plruby_arg_transforms;
+		int			save_arg_ntrf = plruby_arg_ntransforms;
+
+		PG_TRY();
+		{
+			if (CALLED_AS_TRIGGER(fcinfo))
+			{
+				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, true, false);
+				plruby_call_transforms = NULL;
+				plruby_call_ntransforms = 0;
+				retval = plruby_trigger_handler(fcinfo, desc);
+			}
+			else if (CALLED_AS_EVENT_TRIGGER(fcinfo))
+			{
+				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, false, true);
+				plruby_call_transforms = NULL;
+				plruby_call_ntransforms = 0;
+				retval = plruby_event_trigger_handler(fcinfo, desc);
+			}
+			else
+			{
+				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, false, false);
+				plruby_call_transforms = desc->transforms;
+				plruby_call_ntransforms = desc->n_transforms;
+				if (desc->retset)
+					retval = plruby_srf_handler(fcinfo, desc);
+				else
+					retval = plruby_func_handler(fcinfo, desc);
+			}
+		}
+		PG_CATCH();
+		{
+			plruby_call_transforms = save_call_trf;
+			plruby_call_ntransforms = save_call_ntrf;
+			plruby_arg_transforms = save_arg_trf;
+			plruby_arg_ntransforms = save_arg_ntrf;
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+
+		plruby_call_transforms = save_call_trf;
+		plruby_call_ntransforms = save_call_ntrf;
+		plruby_arg_transforms = save_arg_trf;
+		plruby_arg_ntransforms = save_arg_ntrf;
 	}
 
 	return retval;
@@ -573,11 +615,15 @@ plruby_func_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 				Oid			elemtype = get_element_type(desc->ret_oid);
 
 				/*
-				 * Array of composite: build the array datum directly so each
-				 * element record is assembled recursively.  Scalar arrays keep
-				 * the (multidimensional-capable) text path below.
+				 * Array of composite (or of a transformed type, e.g.
+				 * jsonb[]): build the array datum directly so each element
+				 * is assembled recursively/through its ToSQL function.
+				 * Scalar arrays keep the (multidimensional-capable) text
+				 * path below.
 				 */
-				if (OidIsValid(elemtype) && type_is_rowtype(elemtype))
+				if (OidIsValid(elemtype) &&
+					(type_is_rowtype(elemtype) ||
+					 OidIsValid(plruby_transform_tosql(elemtype))))
 				{
 					bool		isnull;
 					Datum		d = plruby_datum_from_value(result, desc->ret_oid,
@@ -939,6 +985,14 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 	int			i,
 				j;
 
+	/*
+	 * FROM-SQL transforms apply only while the argument array is built (so
+	 * SPI/cursor/trigger row reads are unaffected); the call handler's
+	 * PG_CATCH restores this on error.
+	 */
+	plruby_arg_transforms = desc->transforms;
+	plruby_arg_ntransforms = desc->n_transforms;
+
 	for (i = 0, j = 0; i < desc->n_total_args;
 		 (j = IS_ARGMODE_OUT(desc->arg_argmode[i]) ? j : j + 1), i++)
 	{
@@ -1002,19 +1056,35 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 				rb_ary_push(args, Qnil);
 			else
 			{
-				char	   *tmp = OutputFunctionCall(&(desc->arg_out_func[i]),
-													PLRUBY_ARG_VALUE(fcinfo, j));
 				Oid			elemtype = get_element_type(desc->arg_type[i]);
+				Oid			etrf = plruby_transform_fromsql(elemtype);
 
-				if (OidIsValid(elemtype))
-					rb_ary_push(args, plruby_array_from_pg(tmp, elemtype));
-				else
+				if (OidIsValid(etrf))
+				{
+					/* array of a transformed type: per-element FromSQL */
 					rb_ary_push(args,
-								plruby_scalar_from_cstring(tmp, desc->arg_type[i]));
-				pfree(tmp);
+								plruby_array_from_datum(PLRUBY_ARG_VALUE(fcinfo, j),
+														elemtype, etrf));
+				}
+				else
+				{
+					char	   *tmp = OutputFunctionCall(&(desc->arg_out_func[i]),
+														 PLRUBY_ARG_VALUE(fcinfo, j));
+
+					if (OidIsValid(elemtype))
+						rb_ary_push(args, plruby_array_from_pg(tmp, elemtype));
+					else
+						rb_ary_push(args,
+									plruby_scalar_from_cstring(tmp,
+															   desc->arg_type[i]));
+					pfree(tmp);
+				}
 			}
 		}
 	}
+
+	plruby_arg_transforms = NULL;
+	plruby_arg_ntransforms = 0;
 
 	return args;
 }
@@ -1080,6 +1150,7 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 			if (!uptodate)
 			{
 				free(prodesc->proname);
+				free(prodesc->transforms);
 				free(prodesc);
 				prodesc = NULL;
 			}
@@ -1247,6 +1318,8 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 		 * the return type.
 		 */
 		prodesc->ret_transform = InvalidOid;
+		prodesc->transforms = NULL;
+		prodesc->n_transforms = 0;
 		{
 			Datum		protrftypes;
 
@@ -1275,6 +1348,25 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 							get_transform_fromsql(prodesc->arg_type[i],
 												  procStruct->prolang,
 												  trftypes);
+
+				/* The full list, for nested conversions during the call. */
+				prodesc->transforms = (plruby_transform_info *)
+					malloc(nelems * sizeof(plruby_transform_info));
+				if (prodesc->transforms == NULL)
+					elog(ERROR, "out of memory");
+				for (i = 0; i < nelems; i++)
+				{
+					Oid			typid = DatumGetObjectId(elems[i]);
+
+					prodesc->transforms[i].typid = typid;
+					prodesc->transforms[i].fromsql =
+						get_transform_fromsql(typid, procStruct->prolang,
+											  trftypes);
+					prodesc->transforms[i].tosql =
+						get_transform_tosql(typid, procStruct->prolang,
+											trftypes);
+				}
+				prodesc->n_transforms = nelems;
 				list_free(trftypes);
 			}
 		}
@@ -1291,12 +1383,27 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 		initStringInfo(&aliases);
 		initStringInfo(&outvars);
 
+		/*
+		 * Every variant stores the user body as a TOP-LEVEL lambda in
+		 * PLRuby::PROCS and defines the internal method as a pure delegator.
+		 * `class`/`module` keywords are a SyntaxError anywhere lexically
+		 * inside a `def` (blocks included), but are legal in a block at the
+		 * top level -- definitions land globally, like plruby_modules.  An
+		 * explicit `return` exits the lambda with the value the delegator
+		 * method then returns.
+		 */
 		if (is_trigger)
-			appendStringInfo(&src, "def %s()\n%s\nend\n",
-							 internal_proname, proc_source);
+			appendStringInfo(&src,
+							 "PLRuby::PROCS['%s'] = lambda {\n%s\n}\n"
+							 "def %s()\nPLRuby::PROCS['%s'].call\nend\n",
+							 internal_proname, proc_source,
+							 internal_proname, internal_proname);
 		else if (is_event_trigger)
-			appendStringInfo(&src, "def %s()\n%s\nend\n",
-							 internal_proname, proc_source);
+			appendStringInfo(&src,
+							 "PLRuby::PROCS['%s'] = lambda {\n%s\n}\n"
+							 "def %s()\nPLRuby::PROCS['%s'].call\nend\n",
+							 internal_proname, proc_source,
+							 internal_proname, internal_proname);
 		else
 		{
 			bool		first_out = true;
@@ -1343,7 +1450,8 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 					appendStringInfo(&tablecols, "%s = nil\n", argnames[i]);
 			}
 
-			appendStringInfo(&src, "def %s(args, argc)\n", internal_proname);
+			appendStringInfo(&src, "PLRuby::PROCS['%s'] = lambda { |args, argc|\n",
+							 internal_proname);
 			appendStringInfoString(&src, aliases.data);
 
 			if (prodesc->retset)
@@ -1370,7 +1478,10 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 				appendStringInfoString(&src, proc_source);
 				appendStringInfoChar(&src, '\n');
 			}
-			appendStringInfoString(&src, "end\n");
+			appendStringInfoString(&src, "}\n");
+			appendStringInfo(&src,
+							 "def %s(args, argc)\nPLRuby::PROCS['%s'].call(args, argc)\nend\n",
+							 internal_proname, internal_proname);
 			pfree(tablecols.data);
 		}
 
@@ -1442,7 +1553,10 @@ plruby_validator(PG_FUNCTION_ARGS)
 
 	snprintf(tmpname, sizeof(tmpname), "plruby_temp_%u", funcoid);
 	initStringInfo(&src);
-	appendStringInfo(&src, "def %s(args, argc)\n%s\nend\n", tmpname, prosrc);
+	/* Same top-level-lambda shape as the real compilation, so `class`/
+	 * `module` in the body validate (they are illegal inside a def). */
+	appendStringInfo(&src, "PLRuby::PROCS['%s'] = lambda { |args, argc|\n%s\n}\n",
+					 tmpname, prosrc);
 	pfree(prosrc);
 
 	rb_eval_string_protect(src.data, &state);
@@ -1502,8 +1616,11 @@ plruby_inline_handler(PG_FUNCTION_ARGS)
 	snprintf(funcname, sizeof(funcname), "plruby_inline_%ld", ++inline_counter);
 
 	initStringInfo(&src);
-	appendStringInfo(&src, "def %s(args, argc)\n%s\nend\n",
-					 funcname, codeblock->source_text);
+	appendStringInfo(&src,
+					 "PLRuby::PROCS['%s'] = lambda { |args, argc|\n%s\n}\n"
+					 "def %s(args, argc)\nPLRuby::PROCS['%s'].call(args, argc)\nend\n",
+					 funcname, codeblock->source_text,
+					 funcname, funcname);
 
 	rb_eval_string_protect(src.data, &state);
 	pfree(src.data);

@@ -11,6 +11,34 @@
 
 #include <ruby.h>
 
+/*
+ * TRANSFORM FOR TYPE support.  A function's resolved transform list (typid +
+ * FromSQL/ToSQL function OIDs).  The call handler points
+ * plruby_call_transforms at the running function's list for the duration of
+ * the call: TO-SQL conversions (plruby_datum_from_value and friends) consult
+ * it wherever they run, including return_next during the body.  The FROM-SQL
+ * list, plruby_arg_transforms, is only set while the argument array is being
+ * built, so SPI/cursor/trigger row reads are never affected.
+ */
+typedef struct plruby_transform_info
+{
+	Oid			typid;
+	Oid			fromsql;		/* datum -> VALUE, or InvalidOid */
+	Oid			tosql;			/* VALUE -> datum, or InvalidOid */
+} plruby_transform_info;
+
+extern plruby_transform_info *plruby_call_transforms;
+extern int	plruby_call_ntransforms;
+extern plruby_transform_info *plruby_arg_transforms;
+extern int	plruby_arg_ntransforms;
+
+/* The ToSQL / FromSQL function for a type, or InvalidOid. */
+extern Oid	plruby_transform_tosql(Oid typid);
+extern Oid	plruby_transform_fromsql(Oid typid);
+
+/* An array datum -> nested Ruby Array, each element through fromsql_fn. */
+extern VALUE plruby_array_from_datum(Datum d, Oid elemtype, Oid fromsql_fn);
+
 /* Build a Ruby String from PG text tagged with the database encoding. */
 extern VALUE plruby_str_from_pg(const char *str, long len);
 

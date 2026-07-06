@@ -9,6 +9,17 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Inline `class`/`module` definitions in function bodies.** Bodies now
+  compile to a top-level lambda (with a delegator method), where `class` is
+  legal — it was a SyntaxError anywhere inside the previous `def`-based
+  compilation. Definitions register globally for the session, exactly like
+  `plruby_modules` code, and work in functions, triggers, and `DO` blocks.
+- **Transforms reach nested contexts.** A `TRANSFORM FOR TYPE` declaration
+  now also applies to fields of composite arguments and results, OUT
+  parameters, array elements (e.g. `jsonb[]`), and `return_next` rows,
+  including `RETURNS SETOF jsonb`/`hstore`. SPI results are deliberately
+  unaffected. (The SRF row builder is now datum-based, which also lets
+  `return_next` rows carry nested composite values.)
 - **`hstore_plruby`** — a companion extension (in `hstore_plruby/`) providing
   `TRANSFORM FOR TYPE hstore`: opted-in functions receive hstore arguments as
   a Ruby `Hash` of String keys to String-or-`nil` values and may return a

@@ -4,8 +4,6 @@
 --
 
 -- A specific exception class's message is preserved when it propagates out.
--- (A function body compiles to a method, so the class must be a built-in one;
--- defining a class inline is not allowed.)
 CREATE FUNCTION es_custom() RETURNS int LANGUAGE plruby AS $$
     raise ArgumentError, 'custom failure'
 $$;

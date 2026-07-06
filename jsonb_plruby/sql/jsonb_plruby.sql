@@ -104,8 +104,66 @@ LANGUAGE plruby AS $$
 $$;
 SELECT jt_inf();
 
+-- The transform reaches nested contexts: SETOF rows via return_next...
+CREATE FUNCTION jt_batches(jsonb) RETURNS SETOF jsonb
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    args[0].each_slice(2) { |chunk| return_next({'chunk' => chunk}) }
+    nil
+$$;
+SELECT * FROM jt_batches('[1, 2, 3, 4, 5]');
+
+-- ...RETURNS TABLE with a jsonb column...
+CREATE FUNCTION jt_stats(jsonb) RETURNS TABLE (key text, info jsonb)
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    args[0].each do |k, v|
+        return_next({'key' => k, 'info' => {'value' => v, 'class' => v.class.name}})
+    end
+    nil
+$$;
+SELECT * FROM jt_stats('{"a": 1, "b": "two"}') ORDER BY key;
+
+-- ...composite arguments and returns with jsonb fields...
+CREATE TYPE jt_doc AS (id int, body jsonb);
+CREATE FUNCTION jt_comp(jt_doc) RETURNS jt_doc
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    doc = args[0]
+    {'id' => doc['id'] + 1,
+     'body' => doc['body'].merge('seen' => doc['body'].keys.sort)}
+$$;
+SELECT id, body FROM jt_comp(ROW(1, '{"x": 1, "y": 2}')) AS t;
+
+-- ...OUT parameters...
+CREATE FUNCTION jt_split(doc jsonb, OUT small jsonb, OUT big jsonb)
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    small = doc.select { |_, v| v.is_a?(Numeric) && v < 10 }
+    big   = doc.reject { |_, v| v.is_a?(Numeric) && v < 10 }
+$$;
+SELECT * FROM jt_split('{"a": 1, "b": 100, "c": 5}');
+
+-- ...and jsonb[] arguments and returns, element by element.
+CREATE FUNCTION jt_arr(jsonb[]) RETURNS jsonb[]
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    args[0].map { |doc| doc.merge('n' => doc.size) } + [{'extra' => true}]
+$$;
+SELECT jt_arr(ARRAY['{"a": 1}'::jsonb, '{"b": 2, "c": 3}'::jsonb]);
+
 -- Without the TRANSFORM clause, jsonb still travels as a String.
 CREATE FUNCTION jt_untransformed(jsonb) RETURNS text LANGUAGE plruby AS $$
     args[0].class.name
 $$;
 SELECT jt_untransformed('{"a": 1}');
+
+-- SPI results are not affected by the function's transforms: a jsonb column
+-- read through spi_exec is still its String form.
+CREATE FUNCTION jt_spi() RETURNS text
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    row = spi_fetch_row(spi_exec(%q{select '{"a": 1}'::jsonb as d}))
+    row['d'].class.name
+$$;
+SELECT jt_spi();

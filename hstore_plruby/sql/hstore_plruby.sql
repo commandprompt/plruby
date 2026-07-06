@@ -58,6 +58,26 @@ LANGUAGE plruby AS $$
 $$;
 SELECT ht_bad();
 
+-- The transform reaches nested contexts: SETOF rows via return_next...
+CREATE FUNCTION ht_shatter(hstore) RETURNS SETOF hstore
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    args[0].sort.each { |k, v| return_next({k => v}) }
+    nil
+$$;
+SELECT * FROM ht_shatter('b=>2, a=>1');
+
+-- ...and composite rows with an hstore column.
+CREATE FUNCTION ht_rows(hstore) RETURNS TABLE (key text, meta hstore)
+TRANSFORM FOR TYPE hstore
+LANGUAGE plruby AS $$
+    args[0].sort.each do |k, v|
+        return_next({'key' => k, 'meta' => {'value' => v.to_s, 'null' => v.nil?.to_s}})
+    end
+    nil
+$$;
+SELECT * FROM ht_rows('x=>hi, y=>NULL');
+
 -- Without the TRANSFORM clause, hstore still travels as a String.
 CREATE FUNCTION ht_untransformed(hstore) RETURNS text LANGUAGE plruby AS $$
     args[0].class.name
