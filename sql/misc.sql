@@ -44,12 +44,22 @@ $$;
 SELECT pos_ok(5);
 SELECT pos_ok(-5);
 
--- A domain-typed argument arrives as a String (its text form), not as the
--- base type's Ruby value -- the conversion goes by the argument's own type.
+-- A domain-typed argument arrives as its base type's Ruby value (the
+-- domain's constraints were already enforced when the value was created).
 CREATE FUNCTION pos_class(mt_posint) RETURNS text LANGUAGE plruby AS $$
     "#{args[0].class.name}=#{args[0]}"
 $$;
 SELECT pos_class(41);
+
+-- ... including a domain over an array type.
+CREATE DOMAIN mt_intlist AS int[] CHECK (array_length(VALUE, 1) <= 3);
+CREATE FUNCTION list_class(mt_intlist) RETURNS text LANGUAGE plruby AS $$
+    "#{args[0].class.name}=#{args[0].inspect}"
+$$;
+SELECT list_class(ARRAY[1, 2]);
+
+DROP FUNCTION list_class(mt_intlist);
+DROP DOMAIN mt_intlist;
 
 DROP FUNCTION pos_class(mt_posint);
 DROP FUNCTION pos_ok(int);

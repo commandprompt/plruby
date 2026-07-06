@@ -46,6 +46,12 @@ plruby_raise_pg_error(ErrorData *edata)
 											strlen(edata->message)));
 	rb_ivar_set(exc, rb_intern("@sqlstate"),
 				rb_str_new_cstr(unpack_sql_state(edata->sqlerrcode)));
+	if (edata->detail != NULL)
+		rb_ivar_set(exc, rb_intern("@detail"),
+					plruby_str_from_pg(edata->detail, strlen(edata->detail)));
+	if (edata->hint != NULL)
+		rb_ivar_set(exc, rb_intern("@hint"),
+					plruby_str_from_pg(edata->hint, strlen(edata->hint)));
 	FreeErrorData(edata);
 	rb_exc_raise(exc);
 }
@@ -123,6 +129,16 @@ static const char *plruby_spi_prelude =
 "  end\n"
 "  nil\n"
 "end\n"
+"def spi_query_prepared(plan, *args, &blk)\n"
+"  cur = __spi_query_prepared(plan, *args)\n"
+"  return cur unless blk\n"
+"  begin\n"
+"    while (row = spi_fetchrow(cur)); blk.call(row); end\n"
+"  ensure\n"
+"    spi_cursor_close(cur)\n"
+"  end\n"
+"  nil\n"
+"end\n"
 "class PLRuby::Cursor\n"
 "  include Enumerable\n"
 "  def each\n"
@@ -184,20 +200,95 @@ plruby_elog(VALUE self, VALUE level, VALUE message)
 	return Qnil;
 }
 
-static VALUE
-plruby_pg_raise(VALUE self, VALUE level, VALUE message)
+/* A string value for the :key entry of an options Hash, or NULL. */
+static char *
+plruby_opt_str(VALUE opts, const char *key)
 {
-	char	   *lvl = plruby_str_arg(level);
-	char	   *msg = plruby_str_arg(message);
-	int			elevel = plruby_parse_elevel(lvl, false);
+	VALUE		v;
+
+	if (!RB_TYPE_P(opts, T_HASH))
+		return NULL;
+	v = rb_hash_aref(opts, ID2SYM(rb_intern(key)));
+	if (NIL_P(v))
+		return NULL;
+	v = rb_obj_as_string(v);
+	return pnstrdup(RSTRING_PTR(v), RSTRING_LEN(v));
+}
+
+/*
+ * pg_raise(level, message [, detail:, hint:, sqlstate:])
+ *
+ * The keyword fields map onto the corresponding ereport fields.  For ERROR
+ * the unwinding still happens through a Ruby exception (so Ruby code can
+ * rescue it); the fields ride along as instance variables and are re-applied
+ * by plruby_report_exception() if the exception reaches the top level.
+ */
+static VALUE
+plruby_pg_raise(int argc, VALUE *argv, VALUE self)
+{
+	char	   *lvl;
+	char	   *msg;
+	char	   *detail;
+	char	   *hint;
+	char	   *sqlstate;
+	VALUE		opts = Qnil;
+	int			elevel;
+
+	if (argc < 2 || argc > 3)
+		rb_raise(rb_ePLRubyError,
+				 "pg_raise: expected 2 or 3 arguments, got %d", argc);
+	if (argc == 3)
+	{
+		if (!RB_TYPE_P(argv[2], T_HASH))
+			rb_raise(rb_ePLRubyError,
+					 "pg_raise: options must be a Hash (detail:, hint:, sqlstate:)");
+		opts = argv[2];
+	}
+
+	lvl = plruby_str_arg(argv[0]);
+	msg = plruby_str_arg(argv[1]);
+	elevel = plruby_parse_elevel(lvl, false);
 
 	if (elevel < 0)
 		rb_raise(rb_ePLRubyError, "pg_raise: incorrect log level \"%s\"", lvl);
 
-	if (elevel == ERROR)
-		rb_raise(rb_ePLRubyError, "%s", msg);
+	detail = plruby_opt_str(opts, "detail");
+	hint = plruby_opt_str(opts, "hint");
+	sqlstate = plruby_opt_str(opts, "sqlstate");
+	if (sqlstate != NULL)
+	{
+		int			i;
 
-	ereport(elevel, (errmsg("%s", msg)));
+		for (i = 0; i < 5; i++)
+			if (sqlstate[i] == '\0' ||
+				!((sqlstate[i] >= '0' && sqlstate[i] <= '9') ||
+				  (sqlstate[i] >= 'A' && sqlstate[i] <= 'Z')))
+				break;
+		if (i != 5 || sqlstate[5] != '\0')
+			rb_raise(rb_ePLRubyError,
+					 "pg_raise: invalid sqlstate \"%s\"", sqlstate);
+	}
+
+	if (elevel == ERROR)
+	{
+		VALUE		exc = rb_exc_new_cstr(rb_ePLRubyError, msg);
+
+		if (detail != NULL)
+			rb_ivar_set(exc, rb_intern("@detail"), rb_str_new_cstr(detail));
+		if (hint != NULL)
+			rb_ivar_set(exc, rb_intern("@hint"), rb_str_new_cstr(hint));
+		if (sqlstate != NULL)
+			rb_ivar_set(exc, rb_intern("@sqlstate"), rb_str_new_cstr(sqlstate));
+		rb_exc_raise(exc);
+	}
+
+	ereport(elevel,
+			(sqlstate ? errcode(MAKE_SQLSTATE(sqlstate[0], sqlstate[1],
+											  sqlstate[2], sqlstate[3],
+											  sqlstate[4])) : 0,
+			 errmsg("%s", msg),
+			 detail ? errdetail("%s", detail) : 0,
+			 hint ? errhint("%s", hint) : 0));
 	return Qnil;
 }
 
@@ -832,6 +923,89 @@ plruby_spi_query(int argc, VALUE *argv, VALUE self)
 	return obj;
 }
 
+/*
+ * __spi_query_prepared(plan, args...) -> a cursor streaming a prepared
+ * plan's results.  Unlike __spi_query, the cursor does not own the plan:
+ * closing it leaves the plan reusable, and spi_freeplan stays the caller's
+ * job.
+ */
+static VALUE
+plruby_spi_query_prepared(int argc, VALUE *argv, VALUE self)
+{
+	plruby_spi_plan *pl;
+	Portal		portal;
+	plruby_cursor *c;
+	VALUE		obj;
+	Datum	   *values = NULL;
+	char	   *nulls = NULL;
+	int			i;
+	int			nargs;
+	MemoryContext oldcontext = CurrentMemoryContext;
+
+	if (argc < 1)
+		rb_raise(rb_ePLRubyError, "spi_query_prepared: missing plan");
+	pl = plruby_get_spi_plan(argv[0]);
+	if (pl->plan == NULL)
+		rb_raise(rb_ePLRubyError,
+				 "spi_query_prepared: plan has already been freed");
+	nargs = argc - 1;
+	if (nargs != pl->nargs)
+		rb_raise(rb_ePLRubyError,
+				 "spi_query_prepared: plan expects %d argument(s), got %d",
+				 pl->nargs, nargs);
+
+	if (pl->nargs > 0)
+	{
+		values = (Datum *) palloc(pl->nargs * sizeof(Datum));
+		nulls = (char *) palloc(pl->nargs * sizeof(char));
+	}
+
+	/* Like __spi_query: open the portal at the transaction level. */
+	PG_TRY();
+	{
+		for (i = 0; i < pl->nargs; i++)
+		{
+			char	   *val = plruby_value_to_cstring(argv[i + 1], true, true);
+
+			if (val == NULL)
+			{
+				nulls[i] = 'n';
+				values[i] = (Datum) 0;
+			}
+			else
+			{
+				nulls[i] = ' ';
+				values[i] = OidInputFunctionCall(pl->typinput[i], val,
+												 pl->typioparam[i], -1);
+				pfree(val);
+			}
+		}
+
+		portal = SPI_cursor_open(NULL, pl->plan, values, nulls, true);
+		if (portal == NULL)
+			elog(ERROR, "spi_query_prepared: could not open cursor");
+	}
+	PG_CATCH();
+	{
+		ErrorData  *edata;
+
+		MemoryContextSwitchTo(oldcontext);
+		edata = CopyErrorData();
+		FlushErrorState();
+		plruby_raise_pg_error(edata);
+	}
+	PG_END_TRY();
+
+	obj = TypedData_Make_Struct(cCursor, plruby_cursor,
+								&plruby_cursor_type, c);
+	c->portal = portal;
+	c->plan = NULL;				/* not owned: the caller's plan outlives us */
+	c->buffer = Qnil;
+	c->pos = 0;
+
+	return obj;
+}
+
 static VALUE
 plruby_spi_fetchrow(VALUE self, VALUE cur)
 {
@@ -1079,7 +1253,7 @@ plruby_spi_init(void)
 
 	/* Messaging */
 	rb_define_global_function("elog", RUBY_METHOD_FUNC(plruby_elog), 2);
-	rb_define_global_function("pg_raise", RUBY_METHOD_FUNC(plruby_pg_raise), 2);
+	rb_define_global_function("pg_raise", RUBY_METHOD_FUNC(plruby_pg_raise), -1);
 
 	/* Quoting */
 	rb_define_global_function("quote_literal",
@@ -1119,8 +1293,8 @@ plruby_spi_init(void)
 							  RUBY_METHOD_FUNC(plruby_spi_prepare), -1);
 	rb_define_global_function("spi_exec_prepared",
 							  RUBY_METHOD_FUNC(plruby_spi_exec_prepared), -1);
-	rb_define_global_function("spi_query_prepared",
-							  RUBY_METHOD_FUNC(plruby_spi_exec_prepared), -1);
+	rb_define_global_function("__spi_query_prepared",
+							  RUBY_METHOD_FUNC(plruby_spi_query_prepared), -1);
 	rb_define_global_function("spi_freeplan",
 							  RUBY_METHOD_FUNC(plruby_spi_freeplan), 1);
 

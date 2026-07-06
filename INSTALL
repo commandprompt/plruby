@@ -51,3 +51,20 @@ README for why.
 --------------------------------------
 
     make installcheck
+
+
+5. The jsonb transform (optional)
+---------------------------------
+
+The jsonb_plruby/ subdirectory builds a separate extension providing
+TRANSFORM FOR TYPE jsonb, so opted-in functions exchange native Ruby
+Hashes/Arrays with jsonb:
+
+    cd jsonb_plruby
+    make
+    sudo make install
+    # in a database that has (or will get) plruby:
+    #   CREATE EXTENSION jsonb_plruby CASCADE;
+
+It accepts the same PG_CONFIG/RUBY overrides and has its own
+"make installcheck".

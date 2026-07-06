@@ -1,0 +1,6 @@
+# jsonb transform for PL/Ruby  (MIT License; see LICENSE)
+comment = 'transform between jsonb and Ruby data'
+default_version = '1.0'
+module_pathname = '$libdir/jsonb_plruby'
+requires = 'plruby'
+relocatable = true

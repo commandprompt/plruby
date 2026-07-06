@@ -1,0 +1,80 @@
+--
+-- CREATE OR REPLACE FUNCTION invalidates the cached compiled body: the
+-- per-backend proc cache keys on pg_proc xmin/tid, so a replaced function
+-- must recompile on its next call in the same session.
+--
+CREATE FUNCTION rpl_greet() RETURNS text LANGUAGE plruby AS $$
+    'version one'
+$$;
+SELECT rpl_greet();
+  rpl_greet  
+-------------
+ version one
+(1 row)
+
+CREATE OR REPLACE FUNCTION rpl_greet() RETURNS text LANGUAGE plruby AS $$
+    'version two'
+$$;
+SELECT rpl_greet();
+  rpl_greet  
+-------------
+ version two
+(1 row)
+
+-- Replacing inside a transaction takes effect there too.
+BEGIN;
+CREATE OR REPLACE FUNCTION rpl_greet() RETURNS text LANGUAGE plruby AS $$
+    'version three'
+$$;
+SELECT rpl_greet();
+   rpl_greet   
+---------------
+ version three
+(1 row)
+
+ROLLBACK;
+-- After rollback, the previous definition is back.
+SELECT rpl_greet();
+  rpl_greet  
+-------------
+ version two
+(1 row)
+
+-- A replaced function keeps its identity for a caller that runs it via SPI.
+CREATE FUNCTION rpl_caller() RETURNS text LANGUAGE plruby AS $$
+    spi_fetch_row(spi_exec('select rpl_greet() as g'))['g']
+$$;
+SELECT rpl_caller();
+ rpl_caller  
+-------------
+ version two
+(1 row)
+
+CREATE OR REPLACE FUNCTION rpl_greet() RETURNS text LANGUAGE plruby AS $$
+    'version four'
+$$;
+SELECT rpl_caller();
+  rpl_caller  
+--------------
+ version four
+(1 row)
+
+-- Changing the argument list creates a differently keyed compilation.
+CREATE FUNCTION rpl_add(int) RETURNS int LANGUAGE plruby AS $$
+    args[0] + 1
+$$;
+SELECT rpl_add(1);
+ rpl_add 
+---------
+       2
+(1 row)
+
+CREATE OR REPLACE FUNCTION rpl_add(int) RETURNS int LANGUAGE plruby AS $$
+    args[0] + 100
+$$;
+SELECT rpl_add(1);
+ rpl_add 
+---------
+     101
+(1 row)
+

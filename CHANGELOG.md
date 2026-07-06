@@ -5,6 +5,35 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`jsonb_plruby`** — a companion extension (in `jsonb_plruby/`) providing
+  `TRANSFORM FOR TYPE jsonb`: opted-in functions receive jsonb arguments as
+  native Ruby data (`Hash`/`Array`/`String`/`Integer`/`Float`/booleans/`nil`)
+  and return Ruby data into jsonb directly. Integers beyond `Float` precision
+  and `BigDecimal` values serialize exactly.
+- **Structured `pg_raise`** — `pg_raise(level, message, detail:, hint:,
+  sqlstate:)` maps the keywords onto the corresponding `ereport` fields (like
+  PL/pgSQL's `RAISE ... USING`); a PL/Ruby caller that rescues the resulting
+  error reads them back via `PLRuby::Error#detail` / `#hint` / `#sqlstate`.
+- **`PLRuby::Error#detail` / `#hint`** — a caught database error now carries
+  its `DETAIL` and `HINT` alongside the SQLSTATE.
+- **Streaming `spi_query_prepared`** — executes a prepared plan through a
+  cursor (block form and `PLRuby::Cursor` handle form) instead of
+  materializing; the plan stays reusable after the cursor closes. It was
+  previously an alias of `spi_exec_prepared`.
+- **Regression suite 35 → 37 tests** (`replace`: mid-session
+  `CREATE OR REPLACE` recompilation; extended `misc`/`sqlstate`/`prepare`),
+  plus the `jsonb_plruby` suite.
+
+### Changed
+
+- **Domain arguments arrive as the base type's Ruby value** (a domain over
+  `int` is an `Integer`, over `int[]` an `Array`, ...); previously they
+  arrived as the text-form String.
+
 ## [2.1.0] — 2026-07-05
 
 Feature and hardening release: broader trigger and argument-mode coverage,

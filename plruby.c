@@ -23,6 +23,7 @@
 #include "funcapi.h"
 #include "lib/stringinfo.h"
 #include "nodes/parsenodes.h"
+#include "parser/parse_coerce.h"
 #if PG_VERSION_NUM >= 130000
 #include "tcop/cmdtag.h"
 #endif
@@ -80,6 +81,15 @@ typedef struct plruby_proc_desc
 	char		arg_typtype[FUNC_MAX_ARGS];
 	char		arg_argmode[FUNC_MAX_ARGS];
 	FmgrInfo	arg_out_func[FUNC_MAX_ARGS];
+
+	/*
+	 * TRANSFORM FOR TYPE support: the FromSQL function for each argument and
+	 * the ToSQL function for the return value (InvalidOid when the function
+	 * declares no transform for that type).  A FromSQL function returns the
+	 * Ruby VALUE as a Datum; a ToSQL function accepts one.
+	 */
+	Oid			arg_transform[FUNC_MAX_ARGS];
+	Oid			ret_transform;
 } plruby_proc_desc;
 
 /* Interpreter-wide Ruby objects (see plruby.h) */
@@ -146,15 +156,49 @@ plruby_pop_exception_message(void)
 	return msg;
 }
 
+/*
+ * A string-valued instance variable of the pending exception, as a palloc'd
+ * C string, or NULL.  rb_ivar_get cannot raise for a missing ivar.
+ */
+static char *
+plruby_exception_field(VALUE err, const char *ivar)
+{
+	VALUE		v = rb_ivar_get(err, rb_intern(ivar));
+
+	if (!RB_TYPE_P(v, T_STRING))
+		return NULL;
+	return pnstrdup(RSTRING_PTR(v), RSTRING_LEN(v));
+}
+
 void
 plruby_report_exception(void)
 {
-	char	   *msg = plruby_pop_exception_message();
+	VALUE		err = rb_errinfo();
+	char	   *detail = NULL;
+	char	   *hint = NULL;
+	char	   *sqlstate = NULL;
+	char	   *msg;
 
-	if (msg != NULL)
-		elog(ERROR, "%s", msg);
-	else
-		elog(ERROR, "plruby: unknown error");
+	if (!NIL_P(err))
+	{
+		detail = plruby_exception_field(err, "@detail");
+		hint = plruby_exception_field(err, "@hint");
+		sqlstate = plruby_exception_field(err, "@sqlstate");
+		if (sqlstate != NULL && strlen(sqlstate) != 5)
+			sqlstate = NULL;
+	}
+
+	msg = plruby_pop_exception_message();
+	if (msg == NULL)
+		msg = pstrdup("plruby: unknown error");
+
+	ereport(ERROR,
+			(sqlstate ? errcode(MAKE_SQLSTATE(sqlstate[0], sqlstate[1],
+											  sqlstate[2], sqlstate[3],
+											  sqlstate[4])) : 0,
+			 errmsg("%s", msg),
+			 detail ? errdetail("%s", detail) : 0,
+			 hint ? errhint("%s", hint) : 0));
 }
 
 void
@@ -284,7 +328,7 @@ plruby_init(void)
 	}
 
 	plruby_eval_string("module PLRuby; class Error < StandardError;"
-					   " attr_reader :sqlstate; end; end",
+					   " attr_reader :sqlstate, :detail, :hint; end; end",
 					   "plruby: interpreter init");
 
 	rb_mPLRuby = rb_const_get(rb_cObject, rb_intern("PLRuby"));
@@ -494,6 +538,13 @@ plruby_func_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 	{
 		fcinfo->isnull = true;
 		return (Datum) 0;
+	}
+
+	/* A TRANSFORM FOR TYPE return value converts through its ToSQL function */
+	if (OidIsValid(desc->ret_transform) && !NIL_P(result))
+	{
+		fcinfo->isnull = false;
+		return OidFunctionCall1(desc->ret_transform, (Datum) result);
 	}
 
 	switch (TYPE(result))
@@ -890,6 +941,18 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 			continue;
 		}
 
+		/* A TRANSFORM FOR TYPE argument converts through its FromSQL function */
+		if (OidIsValid(desc->arg_transform[i]))
+		{
+			if (PLRUBY_ARG_ISNULL(fcinfo, j))
+				rb_ary_push(args, Qnil);
+			else
+				rb_ary_push(args,
+							(VALUE) OidFunctionCall1(desc->arg_transform[i],
+													 PLRUBY_ARG_VALUE(fcinfo, j)));
+			continue;
+		}
+
 		if (desc->arg_typtype[i] == TYPTYPE_PSEUDO)
 		{
 			HeapTuple	typeTup;
@@ -1147,17 +1210,65 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 					elog(ERROR, "unsupported argument mode %c", mode);
 			}
 			prodesc->arg_argmode[i] = mode;
-			prodesc->arg_type[i] = argtypes ? argtypes[i] : InvalidOid;
-			prodesc->arg_typtype[i] = argtypes ? get_typtype(argtypes[i]) : TYPTYPE_BASE;
+
+			/*
+			 * Resolve domains to their base type so a domain argument gets
+			 * the base type's Ruby mapping (a domain over int arrives as an
+			 * Integer, over int[] as an Array, ...).  The domain's checks
+			 * were already applied when the value was created.
+			 */
+			prodesc->arg_type[i] = argtypes ? getBaseType(argtypes[i]) : InvalidOid;
+			prodesc->arg_typtype[i] = argtypes ?
+				get_typtype(prodesc->arg_type[i]) : TYPTYPE_BASE;
 
 			if (argtypes && prodesc->arg_typtype[i] != TYPTYPE_COMPOSITE)
 			{
 				Oid			typoutput;
 				bool		typisvarlena;
 
-				getTypeOutputInfo(argtypes[i], &typoutput, &typisvarlena);
+				getTypeOutputInfo(prodesc->arg_type[i], &typoutput, &typisvarlena);
 				fmgr_info_cxt(typoutput, &(prodesc->arg_out_func[i]),
 							  TopMemoryContext);
+			}
+
+			prodesc->arg_transform[i] = InvalidOid;
+		}
+
+		/*
+		 * TRANSFORM FOR TYPE list: for each transformed type, look up the
+		 * FromSQL function for matching arguments and the ToSQL function for
+		 * the return type.
+		 */
+		prodesc->ret_transform = InvalidOid;
+		{
+			Datum		protrftypes;
+
+			protrftypes = SysCacheGetAttr(PROCOID, procTup,
+										  Anum_pg_proc_protrftypes, &isnull);
+			if (!isnull)
+			{
+				ArrayType  *arr = DatumGetArrayTypeP(protrftypes);
+				Datum	   *elems;
+				int			nelems;
+				List	   *trftypes = NIL;
+
+				deconstruct_array(arr, OIDOID, sizeof(Oid), true, 'i',
+								  &elems, NULL, &nelems);
+				for (i = 0; i < nelems; i++)
+					trftypes = lappend_oid(trftypes,
+										   DatumGetObjectId(elems[i]));
+
+				prodesc->ret_transform =
+					get_transform_tosql(procStruct->prorettype,
+										procStruct->prolang, trftypes);
+				for (i = 0; i < prodesc->n_total_args; i++)
+					if (!IS_ARGMODE_OUT(prodesc->arg_argmode[i]) &&
+						OidIsValid(prodesc->arg_type[i]))
+						prodesc->arg_transform[i] =
+							get_transform_fromsql(prodesc->arg_type[i],
+												  procStruct->prolang,
+												  trftypes);
+				list_free(trftypes);
 			}
 		}
 

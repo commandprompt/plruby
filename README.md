@@ -49,6 +49,7 @@ SELECT hello('world');   -- Hello, world!
 | 🔐 **Transaction control** | `spi_commit` / `spi_rollback` in procedures, plus `subtransaction` blocks. |
 | 🧰 **Utilities** | `quote_literal` / `quote_nullable` / `quote_ident`, `elog`, `$_SHARED`. |
 | 📦 **Session setup** | Anonymous `DO` blocks, `plruby_modules` autoloading, and a `plruby.start_proc` hook. |
+| 🔄 **jsonb transform** | `CREATE EXTENSION jsonb_plruby`: functions declared `TRANSFORM FOR TYPE jsonb` exchange native Ruby Hashes/Arrays with `jsonb`. |
 
 See the [**language reference**](doc/plruby.md) for the full API, the
 [**cookbook**](doc/cookbook.md) for practical tested recipes, and the

@@ -17,6 +17,10 @@ with the rationale given.
 | Session-shared data                     | `%_SHARED` | `$_SHARED` | A Ruby `Hash` |
 | Anonymous code blocks (`DO`)            | ✅ | ✅ | `DO $$ ... $$ LANGUAGE plruby` |
 | Procedures with transaction control     | ✅ | ✅ | `CALL` a `PROCEDURE`; `spi_commit`/`spi_rollback` in a non-atomic context |
+| `VARIADIC` functions                    | ❌ | ✅ | The variadic tail arrives as one Ruby `Array` (`VARIADIC "any"` unsupported) |
+| `INSTEAD OF` / `TRUNCATE` triggers      | ✅ | ✅ | |
+| `jsonb` transform (`TRANSFORM FOR TYPE`) | `jsonb_plperl` | `jsonb_plruby` | Native `Hash`/`Array` for jsonb; PL/Ruby keeps big integers exact |
+| `hstore` transform                      | `hstore_plperl` | ❌ | Use `hstore_to_jsonb` + `jsonb_plruby`, or the text form |
 | Trusted (sandboxed) variant             | `plperl` (Safe.pm) | ❌ by design | Ruby's `$SAFE`/tainting were removed in 3.0; PL/Ruby is untrusted/superuser-only (see [Security](plruby.md#security)) |
 
 ## Built-in functions
@@ -29,7 +33,7 @@ with the rationale given.
 | `elog(level, msg)`            | `elog` | DEBUG/LOG/INFO/NOTICE/WARNING/ERROR; `pg_raise` is the older, narrower spelling |
 | `spi_prepare`                 | `spi_prepare` | Placeholder types given as SQL type-name strings |
 | `spi_exec_prepared`           | `spi_exec_prepared` | |
-| `spi_query_prepared`          | `spi_query_prepared` | Alias of `spi_exec_prepared` (PL/Ruby materializes results) |
+| `spi_query_prepared`          | `spi_query_prepared` | Streams a prepared plan through a cursor |
 | `spi_freeplan`                | `spi_freeplan` | |
 | `quote_literal`               | `quote_literal` | |
 | `quote_nullable`              | `quote_nullable` | |

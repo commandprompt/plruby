@@ -64,6 +64,38 @@ $$;
 SELECT es_ensure(false);
 SELECT es_ensure(true);
 
+-- pg_raise can attach DETAIL, HINT, and a specific SQLSTATE...
+CREATE FUNCTION es_structured() RETURNS void LANGUAGE plruby AS $$
+    pg_raise('ERROR', 'order rejected',
+             detail: 'order 42 exceeds the credit limit',
+             hint: 'raise the limit or split the order',
+             sqlstate: 'P0001')
+$$;
+SELECT es_structured();
+
+-- ...and a caller that rescues the resulting database error sees all three.
+CREATE FUNCTION es_catch_structured() RETURNS text LANGUAGE plruby AS $$
+    begin
+        spi_exec('select es_structured()')
+        'no error'
+    rescue PLRuby::Error => e
+        "state=#{e.sqlstate} detail=#{e.detail} hint=#{e.hint}"
+    end
+$$;
+SELECT es_catch_structured();
+
+-- Non-error levels emit the fields directly.
+CREATE FUNCTION es_notice_fields() RETURNS void LANGUAGE plruby AS $$
+    pg_raise('NOTICE', 'heads up', detail: 'the details', hint: 'the hint')
+$$;
+SELECT es_notice_fields();
+
+-- An invalid sqlstate is rejected at the call.
+CREATE FUNCTION es_badstate() RETURNS void LANGUAGE plruby AS $$
+    pg_raise('ERROR', 'nope', sqlstate: 'abc')
+$$;
+SELECT es_badstate();
+
 -- pg_raise and elog both reject an unknown level with a PL/Ruby error.
 CREATE FUNCTION es_badraise() RETURNS void LANGUAGE plruby AS $$
     pg_raise('BOGUS', 'nope')

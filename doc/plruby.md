@@ -141,6 +141,38 @@ $$;
 SELECT nest();   -- (1,"(2,deep)")
 ```
 
+### The jsonb transform
+
+By default `json`/`jsonb` travel as Strings of JSON text. The companion
+extension **`jsonb_plruby`** provides a `TRANSFORM FOR TYPE jsonb`: a function
+that opts in receives jsonb arguments as native Ruby data (`Hash`, `Array`,
+`String`, `Integer`, `Float`, `true`/`false`, `nil`) and may return Ruby data
+into a `jsonb` result — no `JSON.parse`/`JSON.generate` round-trip, and
+integers beyond `Float` precision survive exactly:
+
+```sql
+CREATE EXTENSION jsonb_plruby;   -- requires plruby
+
+CREATE FUNCTION redact(doc jsonb, key text) RETURNS jsonb
+TRANSFORM FOR TYPE jsonb
+LANGUAGE plruby AS $$
+    redact = lambda { |v|
+        case v
+        when Hash  then v.to_h { |k, e| [k, k == key ? '[redacted]' : redact.call(e)] }
+        when Array then v.map { |e| redact.call(e) }
+        else v
+        end
+    }
+    redact.call(doc)
+$$;
+```
+
+Returned Hash keys and Symbols become JSON strings; any other `Numeric`
+(e.g. `BigDecimal`) serializes losslessly through its text form. Unsupported
+objects (and non-finite Floats) are rejected with a clear error. The
+transform applies to top-level arguments and return values; jsonb inside a
+composite, OUT parameters, and `return_next` rows still use the String form.
+
 ## Arguments
 
 PL/Ruby supports the full range of argument modes.
@@ -314,7 +346,10 @@ each `$1`, `$2`, ... placeholder and returns a plan object:
 - `spi_prepare(query, type1, type2, ...)` — returns a plan.
 - `spi_exec_prepared(plan, arg1, arg2, ...)` — execute the plan; returns a
   result object just like `spi_exec`.
-- `spi_query_prepared(plan, ...)` — an alias of `spi_exec_prepared`.
+- `spi_query_prepared(plan, arg1, ...)` — stream the plan's result through a
+  cursor instead of materializing it: with a block it yields each row and
+  closes the cursor; without one it returns a `PLRuby::Cursor`. Closing the
+  cursor leaves the plan reusable (`spi_freeplan` stays your job).
 - `spi_freeplan(plan)` — release the plan when you are done with it.
 
 ```sql
@@ -408,10 +443,24 @@ elog('ERROR',   'stop right here')   # aborts, like a PostgreSQL ERROR
 ```
 
 The level is one of `DEBUG`, `LOG`, `INFO`, `NOTICE`, `WARNING`, or `ERROR`
-(case-insensitive). `pg_raise(level, message)` is an older, narrower spelling
-that accepts `notice`, `warning`, or `error`. Anything a function writes to
-standard output (`puts`, `print`, `$stdout`) is also forwarded to the
-PostgreSQL log.
+(case-insensitive). Anything a function writes to standard output (`puts`,
+`print`, `$stdout`) is also forwarded to the PostgreSQL log.
+
+`pg_raise(level, message, ...)` accepts `notice`, `warning`, or `error` and
+optionally attaches the structured error fields, like PL/pgSQL's
+`RAISE ... USING`:
+
+```ruby
+pg_raise('ERROR', 'order rejected',
+         detail: 'order 42 exceeds the credit limit',
+         hint: 'raise the limit or split the order',
+         sqlstate: 'P0001')
+```
+
+`detail:` and `hint:` become the error's `DETAIL` and `HINT` lines; `sqlstate:`
+(five characters, digits or `A`–`Z`) sets its `SQLSTATE`. A PL/Ruby caller
+that rescues such an error gets all three back via `PLRuby::Error#detail`,
+`#hint`, and `#sqlstate` (see [Errors and exceptions](#errors-and-exceptions)).
 
 ## Shared data: `$_SHARED`
 
@@ -485,9 +534,13 @@ CREATE FUNCTION divide(int, int) RETURNS text LANGUAGE plruby AS $$
 $$;
 ```
 
-`sqlstate` is `nil` on a `PLRuby::Error` that does not originate from a
-database error (for example one raised by `elog('ERROR', ...)`); ordinary Ruby
-exceptions do not have the method at all.
+The exception also carries the error's `DETAIL` and `HINT` when present, via
+`PLRuby::Error#detail` and `#hint` — including fields attached by a PL/Ruby
+function further down the stack with `pg_raise(..., detail:, hint:, sqlstate:)`.
+
+`sqlstate`/`detail`/`hint` are `nil` on a `PLRuby::Error` that does not
+originate from a database error (for example one raised by
+`elog('ERROR', ...)`); ordinary Ruby exceptions do not have the methods at all.
 
 ## Security
 
