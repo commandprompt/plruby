@@ -1,0 +1,21 @@
+<svg viewBox="60 130 545 412" xmlns="http://www.w3.org/2000/svg">
+  <path d="M 128 300 C 92 322, 86 362, 103 398" stroke="#2B5578" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <rect x="175" y="402" width="50" height="114" rx="22" fill="#2B5578"/>
+  <rect x="250" y="402" width="50" height="114" rx="22" fill="#2B5578"/>
+  <rect x="325" y="402" width="50" height="114" rx="22" fill="#3A6E9A"/>
+  <rect x="384" y="382" width="50" height="134" rx="22" fill="#3A6E9A"/>
+  <ellipse cx="290" cy="330" rx="165" ry="120" fill="#336791"/>
+  <circle cx="440" cy="275" r="95" fill="#336791"/>
+  <path d="M 425 210 C 393 200, 367 225, 368 263 C 369 297, 395 320, 430 317 C 443 316, 450 307, 445 296 C 433 270, 433 240, 445 219 C 451 209, 439 205, 425 210 Z" fill="#2B5578"/>
+  <path d="M 520 300 C 562 300, 580 248, 560 210 C 547 185, 516 188, 511 214" stroke="#336791" stroke-width="36" fill="none" stroke-linecap="round"/>
+  <circle cx="470" cy="258" r="12" fill="#FAF9F6"/>
+  <circle cx="473" cy="258" r="6" fill="#23272F"/>
+  <g transform="translate(529,182)">
+    <polygon points="-40,-14 -23,-32 23,-32 40,-14 0,36" fill="#CC342D"/>
+    <polygon points="-23,-32 23,-32 14,-14 -14,-14" fill="#E86A6E"/>
+    <polygon points="-40,-14 -23,-32 -14,-14 0,36" fill="#9E1B17"/>
+    <polygon points="40,-14 23,-32 14,-14 0,36" fill="#B82420"/>
+    <polygon points="-14,-14 14,-14 0,36" fill="#D33B33"/>
+    <polygon points="-14,-14 14,-14 6,-2 -6,-2" fill="#EF8A8C" opacity="0.55"/>
+  </g>
+</svg>
