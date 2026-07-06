@@ -5,10 +5,11 @@ alone is awkward. Everything under **Tested recipes** is exercised verbatim by
 the regression suite (`sql/cookbook.sql`), so the code is guaranteed to run on
 every PostgreSQL version the extension supports.
 
-Ruby's stdlib is available via plain `require` (RubyGems is disabled in the
-embedded interpreter, but the standard library is on the load path), which is
-what most of these lean on: `json`, `csv`, `openssl`, `zlib`, `bigdecimal`,
-`erb`, `uri`.
+Ruby's standard library is available via plain `require` — including the
+parts that ship as bundled gems on newer Rubies (`csv`, `bigdecimal`, ...) —
+which is what most of these lean on: `json`, `csv`, `openssl`, `zlib`,
+`bigdecimal`, `erb`, `uri`. Gems you install alongside the server's Ruby are
+requirable too.
 
 ## Tested recipes
 

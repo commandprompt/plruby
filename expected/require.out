@@ -1,6 +1,7 @@
 --
--- The Ruby standard library is reachable via require even though RubyGems is
--- disabled in the embedded interpreter (--disable-gems).
+-- The Ruby standard library is reachable via require.  RubyGems is enabled
+-- so that libraries shipped as bundled gems on newer Rubies (csv,
+-- bigdecimal, base64, ...) resolve too.
 --
 CREATE FUNCTION r_stdlib() RETURNS text LANGUAGE plruby AS $$
     %w[json date set digest securerandom].map { |m|

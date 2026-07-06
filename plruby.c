@@ -309,10 +309,17 @@ plruby_init(void)
 		 * Integer#odd?, Kernel#class, require, ...) is loaded by the normal
 		 * startup path, ruby_options().  We run it with a no-op "-e ;" program
 		 * (which is parsed but never executed, since we do not call
-		 * ruby_run_node) and --disable-gems to avoid pulling in RubyGems.
+		 * ruby_run_node).
+		 *
+		 * RubyGems stays enabled: on Ruby 3.4+ much of the traditional
+		 * standard library (csv, bigdecimal, base64, ...) ships as bundled
+		 * gems that plain require cannot see without it.  did_you_mean and
+		 * error_highlight are disabled so error messages stay deterministic
+		 * (no suggestion lines appended to NameError/NoMethodError).
 		 */
 		static char *ruby_argv[] = {
-			(char *) "plruby", (char *) "--disable-gems",
+			(char *) "plruby",
+			(char *) "--disable=did_you_mean,error_highlight",
 			(char *) "-e", (char *) ";"
 		};
 		int			ruby_argc = lengthof(ruby_argv);

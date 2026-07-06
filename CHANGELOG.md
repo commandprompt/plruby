@@ -33,6 +33,12 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 - **Domain arguments arrive as the base type's Ruby value** (a domain over
   `int` is an `Integer`, over `int[]` an `Array`, ...); previously they
   arrived as the text-form String.
+- **RubyGems is enabled in the embedded interpreter** (was `--disable-gems`):
+  Ruby 3.4 ships `csv`, `bigdecimal`, and `base64` as bundled gems, which
+  plain `require` cannot see without it — and installed gems become
+  requirable as a side benefit. `did_you_mean`/`error_highlight` are disabled
+  so error messages stay deterministic. Verified on Ruby 3.2, 3.3, and 3.4
+  (CI covers all three).
 
 ## [2.1.0] — 2026-07-05
 
