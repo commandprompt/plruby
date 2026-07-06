@@ -1,7 +1,7 @@
 # Feature comparison: PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl
 
 This matrix compares **PL/Ruby** with the sibling PL/php handler and the two
-PostgreSQL built-in procedural languages it draws its feature set from —
+PostgreSQL built-in procedural languages it draws its feature set from:
 PL/Perl and PL/Tcl.
 
 Legend: ✅ supported · ➖ not applicable / different mechanism · ❌ not provided.
@@ -33,10 +33,10 @@ Legend: ✅ supported · ➖ not applicable / different mechanism · ❌ not pro
 | Function | PL/Ruby | PL/php | PL/Perl | PL/Tcl |
 |---|:---:|:---:|:---:|:---:|
 | Run a query | `spi_exec(q[,limit])` | `spi_exec` | `spi_exec_query` | `spi_exec ?-count n?` |
-| Iterate rows | `spi_fetch_row` → `Hash`/`nil` | `spi_fetch_row` | `spi_fetchrow` | row loop / `-array` |
+| Iterate rows | `spi_fetch_row` to `Hash`/`nil` | `spi_fetch_row` | `spi_fetchrow` | row loop / `-array` |
 | Stream via cursor | `spi_query`(+block)/`spi_fetchrow`/`spi_cursor_close`, `Cursor#each` | ➖ | `spi_query`/`spi_fetchrow`/`spi_cursor_close` | `spi_exec`/cursors |
 | Rows processed / status / rewind | `spi_processed`/`spi_status`/`spi_rewind` | ✅ same | ➖ (return hash) | ➖ |
-| Prepare a plan | `spi_prepare(q, types…)` | ✅ same | `spi_prepare` | `spi_prepare` |
+| Prepare a plan | `spi_prepare(q, types...)` | ✅ same | `spi_prepare` | `spi_prepare` |
 | Execute a plan | `spi_exec_prepared` / `spi_query_prepared` | ✅ same | `spi_exec_prepared`/`spi_query_prepared` | `spi_execp` |
 | Free a plan | `spi_freeplan` | ✅ same | `spi_freeplan` | (auto) |
 | Commit / rollback | `spi_commit` / `spi_rollback` | ✅ same | ✅ | `commit`/`rollback` |
@@ -50,8 +50,8 @@ Legend: ✅ supported · ➖ not applicable / different mechanism · ❌ not pro
   composite `Hash`), whereas PL/php, PL/Perl, and PL/Tcl pass most scalars as
   strings. `numeric` is passed as a lossless `String` in PL/Ruby.
 - **Trusted variant.** PL/Perl (`Safe.pm`) and PL/Tcl (Safe-Tcl) offer sandboxed
-  trusted languages for non-superusers. Neither modern Ruby (`$SAFE`/tainting
-  removed in 3.0) nor modern PHP (`safe_mode` removed in 5.4) can be sandboxed,
+  trusted languages for non-superusers. Neither Ruby (`$SAFE`/tainting
+  removed in 3.0) nor PHP (`safe_mode` removed in 5.4) can be sandboxed,
   so PL/Ruby and PL/php are untrusted / superuser-only. See
   [Security](plruby.md#security).
 - **Subtransactions.** In PL/Ruby, `subtransaction` takes a block (or a

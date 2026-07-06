@@ -41,8 +41,8 @@ and only superusers can create PL/Ruby functions. See [Security](#security).
 The body of a `LANGUAGE plruby` function runs as a top-level block. Inside it
 you have:
 
-- `args` — a 0-indexed Array of the call arguments.
-- `argc` — the number of declared arguments.
+- `args`: a 0-indexed Array of the call arguments.
+- `argc`: the number of declared arguments.
 - The function returns the value of its **last expression** (or an explicit
   `return`).
 - `class`, `module`, and `def` statements are allowed and define globally,
@@ -104,11 +104,11 @@ SELECT an_array();   -- {{1,3,5},{2,4,6}}
 ```
 
 Strings arrive tagged with the Ruby encoding that matches the database encoding
-(`UTF8` → `UTF-8`, `LATIN1` → `ISO-8859-1`, `EUC_JP` → `EUC-JP`, `WIN1251` →
+(`UTF8` to `UTF-8`, `LATIN1` to `ISO-8859-1`, `EUC_JP` to `EUC-JP`, `WIN1251` to
 `Windows-1251`, and so on), so `length`, `reverse`, and regexps operate on
 characters, not bytes. Encodings Ruby does not recognize fall back to
 `ASCII-8BIT` (binary), which is byte-preserving. `bytea` is passed as its
-textual `\x…` hex representation (a `String`), not raw bytes.
+textual `\x...` hex representation (a `String`), not raw bytes.
 
 ## Composite types and records
 
@@ -150,7 +150,7 @@ By default `json`/`jsonb` travel as Strings of JSON text. The companion
 extension **`jsonb_plruby`** provides a `TRANSFORM FOR TYPE jsonb`: a function
 that opts in receives jsonb arguments as native Ruby data (`Hash`, `Array`,
 `String`, `Integer`, `Float`, `true`/`false`, `nil`) and may return Ruby data
-into a `jsonb` result — no `JSON.parse`/`JSON.generate` round-trip, and
+into a `jsonb` result, with no `JSON.parse`/`JSON.generate` round-trip, and
 integers beyond `Float` precision survive exactly:
 
 ```sql
@@ -176,9 +176,9 @@ objects (and non-finite Floats) are rejected with a clear error. The
 transform applies everywhere values cross between SQL and Ruby: plain
 arguments and returns, fields of composite arguments and results, OUT
 parameters, `jsonb[]` elements, `return_next` rows (including
-`RETURNS SETOF jsonb`), and — when a *trigger* function declares the
-clause — the `$_TD['new']`/`$_TD['old']` rows and the `'MODIFY'` result.
-Rows read through `spi_exec`/`spi_query` are *not* affected — SPI results
+`RETURNS SETOF jsonb`), and, when a trigger function declares the clause,
+the `$_TD['new']`/`$_TD['old']` rows and the `'MODIFY'` result.
+Rows read through `spi_exec`/`spi_query` are not affected; SPI results
 keep their ordinary representation.
 
 The **`hstore_plruby`** extension does the same for `hstore`
@@ -259,9 +259,9 @@ involved are available in the `Hash` `$_TD`:
 
 Return value of a **BEFORE** or **INSTEAD OF** ... **FOR EACH ROW** trigger:
 
-- `nil` — proceed with the operation using the unmodified row.
-- `'SKIP'` — silently skip the operation for this row.
-- `'MODIFY'` — proceed using the (modified) `$_TD['new']` row. Modify fields in
+- `nil`: proceed with the operation using the unmodified row.
+- `'SKIP'`: silently skip the operation for this row.
+- `'MODIFY'`: proceed using the (modified) `$_TD['new']` row. Modify fields in
   place, e.g. `$_TD['new']['col'] = 'value'`. Only valid for INSERT/UPDATE; on a
   DELETE there is no new row, so return `nil` (proceed) or `'SKIP'` instead.
 
@@ -309,14 +309,14 @@ The return value of an event trigger function is ignored.
 
 Run queries against the current database from within a function:
 
-- `spi_exec(query [, limit])` — execute `query` (optionally limiting rows) and
+- `spi_exec(query [, limit])`: execute `query` (optionally limiting rows) and
   return a result object. The call runs in a subtransaction that is rolled back
   automatically if the query raises an error.
-- `spi_fetch_row(result)` — return the next row as a `Hash`, or `nil` when the
+- `spi_fetch_row(result)`: return the next row as a `Hash`, or `nil` when the
   rows are exhausted.
-- `spi_processed(result)` — number of rows the query produced.
-- `spi_status(result)` — the SPI status code as a `String`.
-- `spi_rewind(result)` — restart iteration from the first row.
+- `spi_processed(result)`: number of rows the query produced.
+- `spi_status(result)`: the SPI status code as a `String`.
+- `spi_rewind(result)`: restart iteration from the first row.
 
 ```sql
 CREATE FUNCTION sum_series(n integer) RETURNS integer LANGUAGE plruby AS $$
@@ -330,11 +330,11 @@ $$;
 `spi_exec` materializes the whole result. To stream a large result without
 holding it all in memory, use a cursor:
 
-- `spi_query(query)` — open a cursor over `query`. With a block it yields each
+- `spi_query(query)`: open a cursor over `query`. With a block it yields each
   row `Hash` and closes the cursor automatically; without a block it returns a
   `PLRuby::Cursor`.
-- `spi_fetchrow(cursor)` — the next row as a `Hash`, or `nil` at end of result.
-- `spi_cursor_close(cursor)` — close a cursor early (otherwise it closes when
+- `spi_fetchrow(cursor)`: the next row as a `Hash`, or `nil` at end of result.
+- `spi_cursor_close(cursor)`: close a cursor early (otherwise it closes when
   exhausted or when the function returns). After closing, `spi_fetchrow`
   returns `nil` and closing again is a no-op.
 - `PLRuby::Cursor` is `Enumerable` (via `#each`), so `map`, `select`, etc. work.
@@ -357,14 +357,14 @@ For queries you run repeatedly, prepare a plan once and execute it with
 parameters. `spi_prepare` takes the query text followed by the SQL type name of
 each `$1`, `$2`, ... placeholder and returns a plan object:
 
-- `spi_prepare(query, type1, type2, ...)` — returns a plan.
-- `spi_exec_prepared(plan, arg1, arg2, ...)` — execute the plan; returns a
+- `spi_prepare(query, type1, type2, ...)`: returns a plan.
+- `spi_exec_prepared(plan, arg1, arg2, ...)`: execute the plan; returns a
   result object just like `spi_exec`.
-- `spi_query_prepared(plan, arg1, ...)` — stream the plan's result through a
+- `spi_query_prepared(plan, arg1, ...)`: stream the plan's result through a
   cursor instead of materializing it: with a block it yields each row and
   closes the cursor; without one it returns a `PLRuby::Cursor`. Closing the
   cursor leaves the plan reusable (`spi_freeplan` stays your job).
-- `spi_freeplan(plan)` — release the plan when you are done with it.
+- `spi_freeplan(plan)`: release the plan when you are done with it.
 
 ```sql
 CREATE FUNCTION lookup(int) RETURNS text LANGUAGE plruby AS $$
@@ -383,8 +383,8 @@ better performance; free it with `spi_freeplan` when no longer needed.
 Inside a **procedure** invoked by `CALL` in a non-atomic context, you can commit
 or roll back the current transaction:
 
-- `spi_commit` — commit the current transaction and begin a new one.
-- `spi_rollback` — roll back the current transaction and begin a new one.
+- `spi_commit`: commit the current transaction and begin a new one.
+- `spi_rollback`: roll back the current transaction and begin a new one.
 
 ```sql
 CREATE PROCEDURE import_batch() LANGUAGE plruby AS $$
@@ -433,10 +433,10 @@ from it.
 When building SQL dynamically, quote values and identifiers so the result is
 safe and syntactically correct:
 
-- `quote_literal(string)` — quote a value as an SQL string literal.
-- `quote_nullable(value)` — like `quote_literal`, but a Ruby `nil` becomes the
+- `quote_literal(string)`: quote a value as an SQL string literal.
+- `quote_nullable(value)`: like `quote_literal`, but a Ruby `nil` becomes the
   SQL keyword `NULL`.
-- `quote_ident(name)` — quote a string for use as an SQL identifier (only when
+- `quote_ident(name)`: quote a string for use as an SQL identifier (only when
   needed).
 
 ```ruby
@@ -472,7 +472,7 @@ pg_raise('ERROR', 'order rejected',
 ```
 
 `detail:` and `hint:` become the error's `DETAIL` and `HINT` lines; `sqlstate:`
-(five characters, digits or `A`–`Z`) sets its `SQLSTATE`. A PL/Ruby caller
+(five characters, digits or `A`-`Z`) sets its `SQLSTATE`. A PL/Ruby caller
 that rescues such an error gets all three back via `PLRuby::Error#detail`,
 `#hint`, and `#sqlstate` (see [Errors and exceptions](#errors-and-exceptions)).
 
@@ -500,7 +500,7 @@ session.
 **Modules.** If a table named `plruby_modules(modname text, modseq int, modsrc
 text)` exists, its rows are evaluated at the top level (ordered by `modname`,
 `modseq`) when the interpreter initializes. Any methods or classes the code
-defines become available to every PL/Ruby function in the session — a
+defines become available to every PL/Ruby function in the session, a
 convenient place for a shared library of helpers:
 
 ```sql
@@ -549,7 +549,7 @@ $$;
 ```
 
 The exception also carries the error's `DETAIL` and `HINT` when present, via
-`PLRuby::Error#detail` and `#hint` — including fields attached by a PL/Ruby
+`PLRuby::Error#detail` and `#hint`, including fields attached by a PL/Ruby
 function further down the stack with `pg_raise(..., detail:, hint:, sqlstate:)`.
 
 `sqlstate`/`detail`/`hint` are `nil` on a `PLRuby::Error` that does not
@@ -560,9 +560,9 @@ originate from a database error (for example one raised by
 
 PL/Ruby is an **untrusted** language. Historically a trusted variant could
 restrict user code using Ruby's `$SAFE` levels and object tainting, but **both
-were removed in Ruby 3.0**, so on modern Ruby nothing sandboxes a PL/Ruby
+were removed in Ruby 3.0**, so nothing sandboxes a PL/Ruby
 function: it can do whatever the PostgreSQL server's operating-system user can
-do — read and write files, open network connections, run shell commands, and so
+do: read and write files, open network connections, run shell commands, and so
 on.
 
 Accordingly, the language is created without the `TRUSTED` attribute: the

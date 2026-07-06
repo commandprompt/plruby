@@ -39,15 +39,15 @@ with the rationale given.
 | `quote_nullable`              | `quote_nullable` | |
 | `quote_ident`                 | `quote_ident` | |
 | `spi_commit` / `spi_rollback` | `spi_commit` / `spi_rollback` | Transaction control in a procedure invoked by `CALL` (non-atomic) |
-| `looks_like_number`           | — | Use Ruby: `Float(x) rescue nil`, `x =~ /\A\d+\z/`, etc. |
-| `encode_bytea` / `decode_bytea` | — | Use Ruby's `Array#pack` / `String#unpack1`, `[..].pack('H*')`, Base64, etc. |
-| `encode_array_literal` / `encode_typed_literal` | — | Return a Ruby `Array` directly, or build literals with the quoting helpers |
+| `looks_like_number`           | n/a | Use Ruby: `Float(x) rescue nil`, `x =~ /\A\d+\z/`, etc. |
+| `encode_bytea` / `decode_bytea` | n/a | Use Ruby's `Array#pack` / `String#unpack1`, `[..].pack('H*')`, Base64, etc. |
+| `encode_array_literal` / `encode_typed_literal` | n/a | Return a Ruby `Array` directly, or build literals with the quoting helpers |
 
 ## Intentionally not implemented
 
 - **Trusted/sandboxed language.** PL/Perl's `plperl` uses `Safe.pm` to restrict
-  operations. Modern Ruby has no equivalent (`$SAFE` and object tainting were
-  removed in Ruby 3.0), so PL/Ruby is untrusted only.
+  operations. Ruby has no equivalent since `$SAFE` and object tainting were
+  removed in Ruby 3.0, so PL/Ruby is untrusted only.
 - **Cursor-streaming SPI** (a portal-backed `spi_query` + row-at-a-time fetch).
   PL/Ruby's `spi_exec` materializes results and `spi_fetch_row` iterates them,
   covering the same use cases; true streaming of very large result sets without

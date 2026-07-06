@@ -1,13 +1,13 @@
 # PL/Ruby cookbook
 
-Practical, working recipes that use Ruby's standard library where PostgreSQL
+Working recipes that use Ruby's standard library where PostgreSQL
 alone is awkward. Everything under **Tested recipes** is exercised verbatim by
 the regression suite (`sql/cookbook.sql`), so the code is guaranteed to run on
 every PostgreSQL version the extension supports.
 
-Ruby's standard library is available via plain `require` — including the
-parts that ship as bundled gems on newer Rubies (`csv`, `bigdecimal`, ...) —
-which is what most of these lean on: `json`, `csv`, `openssl`, `zlib`,
+Ruby's standard library is available via plain `require`, including the
+parts that ship as bundled gems on newer Rubies (`csv`, `bigdecimal`, ...).
+Most of these recipes lean on it: `json`, `csv`, `openssl`, `zlib`,
 `bigdecimal`, `erb`, `uri`. Gems you install alongside the server's Ruby are
 requirable too.
 
@@ -15,8 +15,8 @@ requirable too.
 
 ### Validate an email address
 
-`URI::MailTo::EMAIL_REGEXP` is a maintained, RFC-conscious pattern that ships
-with Ruby — no extension packages needed.
+`URI::MailTo::EMAIL_REGEXP` is a maintained pattern that ships with Ruby; no
+extension packages are needed.
 
 ```sql
 CREATE FUNCTION is_email(text) RETURNS boolean LANGUAGE plruby AS $$
@@ -66,7 +66,7 @@ SELECT * FROM extract_emails('Contact ann@example.com or bob@test.org today.');
 ### HMAC-signed tokens
 
 Sign a value so a client cannot tamper with it, and verify it in constant
-time on the way back in. `Array#pack('m0')` handles the Base64 leg — no
+time on the way back in. `Array#pack('m0')` handles the Base64 leg with no
 extra requires (the `base64` library left Ruby's default gems in 3.4).
 
 ```sql
@@ -162,8 +162,8 @@ CALL process_queue(1000);
 
 ### Stream a big scan and stop early
 
-`spi_query` reads through a cursor a batch at a time — constant memory no
-matter how large the table — and `break` abandons the scan as soon as the
+`spi_query` reads through a cursor a batch at a time (constant memory no
+matter how large the table), and `break` abandons the scan as soon as the
 answer is known. Here: the first gap in an id sequence.
 
 ```sql
@@ -179,7 +179,7 @@ $$;
 
 ### Parse CSV text into rows
 
-Ruby's stdlib `csv` handles quoting, embedded commas and headers correctly —
+Ruby's stdlib `csv` handles quoting, embedded commas and headers correctly;
 things a hand-rolled `split(',')` gets wrong.
 
 ```sql
@@ -214,7 +214,7 @@ $$;
 ### Exact decimal arithmetic with BigDecimal
 
 `numeric` reaches Ruby as a lossless String precisely so it can feed
-`BigDecimal` — no Float rounding anywhere.
+`BigDecimal`, with no Float rounding anywhere.
 
 ```sql
 CREATE FUNCTION money_share(total numeric, parts int) RETURNS numeric LANGUAGE plruby AS $$
@@ -252,7 +252,7 @@ CREATE FUNCTION order_summary(cust text, total numeric) RETURNS text LANGUAGE pl
 $$;
 ```
 
-## Doc-only recipes (side effects — use with care)
+## Doc-only recipes (side effects; use with care)
 
 These work, but reach outside the database, so they are not part of the
 regression suite. Remember that PL/Ruby is untrusted: functions run with the

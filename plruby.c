@@ -1584,7 +1584,7 @@ plruby_validator(PG_FUNCTION_ARGS)
 		{
 			/*
 			 * Ruby 3.4's parser (Prism) reports syntax errors over several
-			 * lines, quoting the generated wrapper source — including the
+			 * lines, quoting the generated wrapper source, including the
 			 * OID-derived internal method name.  Keep the first line only.
 			 */
 			char	   *nl = strchr(msg, '\n');
