@@ -15,6 +15,18 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
   independent and resets when the function is recompiled; an anonymous `DO` block
   gets a fresh, empty `$_SD` each run.
 
+### Changed
+
+- **`bytea` maps to a binary `String`, not hex text (breaking).** A `bytea`
+  value now reaches Ruby as a binary (`ASCII-8BIT`) `String` of its raw bytes,
+  NUL-safe, instead of its `\x...` hex text; returning a `String` into a `bytea`
+  takes the string's raw bytes verbatim, with no hex/escape parsing. This
+  matches PL/Python's `bytea` <-> `bytes` mapping and applies wherever a `bytea`
+  crosses between SQL and Ruby (arguments, returns, `bytea[]` elements,
+  composite fields, and SPI result rows). Function bodies that previously
+  produced or consumed the hex text form must be updated (e.g. build bytes with
+  `[..].pack('C*')` rather than assembling a `\x` string).
+
 ## [2.4.0] - 2026-07-06
 
 Feature parity with the sibling PL/php 2.4: an `on_init` hook, the

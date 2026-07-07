@@ -36,8 +36,18 @@ extern int	plruby_arg_ntransforms;
 extern Oid	plruby_transform_tosql(Oid typid);
 extern Oid	plruby_transform_fromsql(Oid typid);
 
-/* An array datum -> nested Ruby Array, each element through fromsql_fn. */
+/*
+ * An array datum -> nested Ruby Array.  A valid fromsql_fn converts each
+ * element through that FromSQL transform; InvalidOid means convert per
+ * plruby_binary_from_datum (bytea[] elements as binary Strings).
+ */
 extern VALUE plruby_array_from_datum(Datum d, Oid elemtype, Oid fromsql_fn);
+
+/*
+ * bytea Datum -> binary (ASCII-8BIT) Ruby String of its raw bytes, or Qundef
+ * if typeoid is not bytea (caller then uses the normal text path).
+ */
+extern VALUE plruby_binary_from_datum(Datum value, Oid typeoid);
 
 /* Build a Ruby String from PG text tagged with the database encoding. */
 extern VALUE plruby_str_from_pg(const char *str, long len);
