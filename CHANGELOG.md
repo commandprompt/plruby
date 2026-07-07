@@ -5,7 +5,13 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.5.0] - 2026-07-06
+
+PL/Python parity: per-function `$_SD` storage, a raw-binary `bytea` mapping, SPI
+result column metadata, and an `ltree` transform. With these, PL/Ruby is at or
+ahead of PL/Python across the board. The core changes are in the shared library;
+`ALTER EXTENSION plruby UPDATE` completes the upgrade after installing the new
+binary. The `ltree` transform ships as the separate `ltree_plruby` extension.
 
 ### Added
 
