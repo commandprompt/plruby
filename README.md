@@ -8,7 +8,7 @@
 [![CI](https://github.com/commandprompt/plruby/actions/workflows/ci.yml/badge.svg)](https://github.com/commandprompt/plruby/actions/workflows/ci.yml)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-11_to_18-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-42_passing-brightgreen)](sql/)
+[![Tests](https://img.shields.io/badge/tests-44_passing-brightgreen)](sql/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
@@ -45,11 +45,11 @@ SELECT hello('world');   -- Hello, world!
 | 🔁 **Set-returning functions** | `RETURNS SETOF` / `RETURNS TABLE` with `return_next`. |
 | ⚡ **Triggers** | Row & statement triggers via `$_TD` (with `'SKIP'` / `'MODIFY'`). |
 | 📣 **Event triggers** | Back `CREATE EVENT TRIGGER` with `RETURNS event_trigger`. |
-| 🗄️ **Database access (SPI)** | `spi_exec`, `spi_fetch_row`, `spi_processed`, `spi_status`, `spi_rewind`. |
+| 🗄️ **Database access (SPI)** | `spi_exec`, `spi_fetch_row`, `spi_processed`, `spi_status`, `spi_rewind`, and result column metadata (`spi_colnames` / `spi_coltypes` / `spi_coltypmods`). |
 | 🌊 **Cursor streaming** | `spi_query` (block or handle), `spi_fetchrow`, `spi_cursor_close`, `Cursor#each`. Consume large results without materializing them. |
 | 📝 **Prepared statements** | `spi_prepare` / `spi_exec_prepared` / `spi_query_prepared` / `spi_freeplan`. |
 | 🔐 **Transaction control** | `spi_commit` / `spi_rollback` in procedures, plus `subtransaction` blocks. |
-| 🧰 **Utilities** | `quote_literal` / `quote_nullable` / `quote_ident`, `elog`, `$_SHARED`. |
+| 🧰 **Utilities** | `quote_literal` / `quote_nullable` / `quote_ident`, `elog`, session-shared `$_SHARED`, and per-function `$_SD`. |
 | 📦 **Session setup** | Anonymous `DO` blocks, `plruby_modules` autoloading, and a `plruby.start_proc` hook. |
 | 🔄 **Transforms** | `jsonb_plruby`, `hstore_plruby`, and `ltree_plruby`: functions declared `TRANSFORM FOR TYPE` exchange native Ruby Hashes/Arrays with `jsonb`, `hstore`, and `ltree`. |
 

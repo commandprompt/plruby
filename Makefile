@@ -17,7 +17,7 @@ MODULE_big = plruby
 OBJS = plruby.o plruby_io.o plruby_spi.o
 
 EXTENSION = plruby
-DATA = plruby--2.0.sql plruby--2.1.sql plruby--2.2.sql plruby--2.3.sql plruby--2.4.sql plruby--2.0--2.1.sql plruby--2.1--2.2.sql plruby--2.2--2.3.sql plruby--2.3--2.4.sql
+DATA = plruby--2.0.sql plruby--2.1.sql plruby--2.2.sql plruby--2.3.sql plruby--2.4.sql plruby--2.5.sql plruby--2.0--2.1.sql plruby--2.1--2.2.sql plruby--2.2--2.3.sql plruby--2.3--2.4.sql plruby--2.4--2.5.sql
 
 # Ruby compile/link flags, discovered via RbConfig.
 RUBY ?= ruby
