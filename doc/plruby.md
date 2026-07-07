@@ -204,6 +204,26 @@ to String-or-`nil` values, and a returned `Hash` becomes an hstore (keys
 and values are stringified; `nil` becomes an hstore `NULL`). It requires
 the `hstore` extension and is built from the `hstore_plruby/` subdirectory.
 
+The **`ltree_plruby`** extension does the same for `ltree`
+(`TRANSFORM FOR TYPE ltree`): an ltree argument arrives as a Ruby `Array` of
+its label Strings (`'Top.Science'` becomes `['Top', 'Science']`), and a
+returned `Array` becomes an ltree (its elements are stringified and joined
+with `.`, so an invalid label is rejected by ltree's own parser). The empty
+ltree maps to the empty `Array`. It mirrors the in-core `ltree_plpython`
+transform, requires the `ltree` extension, and is built from the
+`ltree_plruby/` subdirectory.
+
+```sql
+CREATE EXTENSION ltree_plruby;   -- requires plruby and ltree
+
+CREATE FUNCTION ancestors(path ltree) RETURNS SETOF ltree
+TRANSFORM FOR TYPE ltree
+LANGUAGE plruby AS $$
+    (1..path.length).each { |n| return_next(path[0...n]) }
+    nil
+$$;
+```
+
 ## Arguments
 
 PL/Ruby supports the full range of argument modes.

@@ -51,7 +51,7 @@ SELECT hello('world');   -- Hello, world!
 | 🔐 **Transaction control** | `spi_commit` / `spi_rollback` in procedures, plus `subtransaction` blocks. |
 | 🧰 **Utilities** | `quote_literal` / `quote_nullable` / `quote_ident`, `elog`, `$_SHARED`. |
 | 📦 **Session setup** | Anonymous `DO` blocks, `plruby_modules` autoloading, and a `plruby.start_proc` hook. |
-| 🔄 **Transforms** | `jsonb_plruby` and `hstore_plruby`: functions declared `TRANSFORM FOR TYPE` exchange native Ruby Hashes/Arrays with `jsonb` and `hstore`. |
+| 🔄 **Transforms** | `jsonb_plruby`, `hstore_plruby`, and `ltree_plruby`: functions declared `TRANSFORM FOR TYPE` exchange native Ruby Hashes/Arrays with `jsonb`, `hstore`, and `ltree`. |
 
 See the [**language reference**](doc/plruby.md) for the full API, the
 [**cookbook**](doc/cookbook.md) for tested recipes, and the

@@ -53,19 +53,21 @@ README for why.
     make installcheck
 
 
-5. The jsonb and hstore transforms (optional)
----------------------------------------------
+5. The jsonb, hstore, and ltree transforms (optional)
+-----------------------------------------------------
 
-The jsonb_plruby/ and hstore_plruby/ subdirectories each build a separate
-extension providing TRANSFORM FOR TYPE jsonb (native Ruby Hashes/Arrays)
-and TRANSFORM FOR TYPE hstore (Ruby Hash of String => String/nil):
+The jsonb_plruby/, hstore_plruby/, and ltree_plruby/ subdirectories each
+build a separate extension providing TRANSFORM FOR TYPE jsonb (native Ruby
+Hashes/Arrays), TRANSFORM FOR TYPE hstore (Ruby Hash of String => String/nil),
+and TRANSFORM FOR TYPE ltree (Ruby Array of label Strings):
 
-    cd jsonb_plruby        # or hstore_plruby
+    cd jsonb_plruby        # or hstore_plruby, or ltree_plruby
     make
     sudo make install
     # in a database that has (or will get) plruby:
     #   CREATE EXTENSION jsonb_plruby CASCADE;
     #   CREATE EXTENSION hstore_plruby CASCADE;   -- also requires hstore
+    #   CREATE EXTENSION ltree_plruby CASCADE;    -- also requires ltree
 
-Both accept the same PG_CONFIG/RUBY overrides and have their own
+All three accept the same PG_CONFIG/RUBY overrides and have their own
 "make installcheck".
