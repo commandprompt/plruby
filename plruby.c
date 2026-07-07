@@ -724,7 +724,26 @@ plruby_func_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 		case T_FIXNUM:
 		case T_BIGNUM:
 		case T_FLOAT:
+			retvalbuffer = plruby_value_to_cstring(result, false, false);
+			break;
 		case T_STRING:
+			/*
+			 * bytea takes the String's raw bytes (NUL-safe) via the datum
+			 * path; every other scalar keeps the text-input path below.
+			 */
+			if (desc->ret_oid == BYTEAOID)
+			{
+				bool		isnull;
+				Datum		d = plruby_datum_from_value(result, desc->ret_oid,
+														(int32) -1, &isnull);
+
+				if (isnull)
+				{
+					fcinfo->isnull = true;
+					return (Datum) 0;
+				}
+				return d;
+			}
 			retvalbuffer = plruby_value_to_cstring(result, false, false);
 			break;
 		case T_ARRAY:
@@ -733,14 +752,15 @@ plruby_func_handler(FunctionCallInfo fcinfo, plruby_proc_desc *desc)
 				Oid			elemtype = get_element_type(desc->ret_oid);
 
 				/*
-				 * Array of composite (or of a transformed type, e.g.
-				 * jsonb[]): build the array datum directly so each element
-				 * is assembled recursively/through its ToSQL function.
-				 * Scalar arrays keep the (multidimensional-capable) text
-				 * path below.
+				 * Array of composite (or of a transformed type, e.g. jsonb[],
+				 * or of bytea, whose elements are raw bytes): build the array
+				 * datum directly so each element is assembled recursively /
+				 * through its ToSQL function.  Scalar arrays keep the
+				 * (multidimensional-capable) text path below.
 				 */
 				if (OidIsValid(elemtype) &&
 					(type_is_rowtype(elemtype) ||
+					 elemtype == BYTEAOID ||
 					 OidIsValid(plruby_transform_tosql(elemtype))))
 				{
 					bool		isnull;
@@ -1201,6 +1221,20 @@ plruby_func_build_args(plruby_proc_desc *desc, FunctionCallInfo fcinfo)
 					rb_ary_push(args,
 								plruby_array_from_datum(PLRUBY_ARG_VALUE(fcinfo, j),
 														elemtype, etrf));
+				}
+				else if (argtype == BYTEAOID)
+				{
+					/* bytea: raw binary String, not hex text */
+					rb_ary_push(args,
+								plruby_binary_from_datum(PLRUBY_ARG_VALUE(fcinfo, j),
+														 BYTEAOID));
+				}
+				else if (elemtype == BYTEAOID)
+				{
+					/* bytea[]: elements as binary Strings */
+					rb_ary_push(args,
+								plruby_array_from_datum(PLRUBY_ARG_VALUE(fcinfo, j),
+														BYTEAOID, InvalidOid));
 				}
 				else
 				{

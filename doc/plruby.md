@@ -98,6 +98,7 @@ function.
 | numeric                        | `String` (lossless)       | `Numeric` or `String`      |
 | boolean                        | `true` / `false`          | `true` / `false`           |
 | text / varchar / etc.          | `String`                  | `String`                   |
+| bytea                          | binary `String` (ASCII-8BIT) | `String` (raw bytes)    |
 | arrays (e.g. `int[]`)          | nested `Array`            | nested `Array`             |
 | composite / row / record       | `Hash` (string keys)      | `Hash` (or positional `Array`) |
 | NULL                           | `nil`                     | `nil`                      |
@@ -115,8 +116,16 @@ Strings arrive tagged with the Ruby encoding that matches the database encoding
 (`UTF8` to `UTF-8`, `LATIN1` to `ISO-8859-1`, `EUC_JP` to `EUC-JP`, `WIN1251` to
 `Windows-1251`, and so on), so `length`, `reverse`, and regexps operate on
 characters, not bytes. Encodings Ruby does not recognize fall back to
-`ASCII-8BIT` (binary), which is byte-preserving. `bytea` is passed as its
-textual `\x...` hex representation (a `String`), not raw bytes.
+`ASCII-8BIT` (binary), which is byte-preserving.
+
+`bytea` is the exception: it is a raw byte string, so it arrives as a binary
+(`ASCII-8BIT`) `String` holding its exact bytes, including any NULs, rather than
+as hex text. Returning a `String` into a `bytea` takes the string's raw bytes
+verbatim (whatever its encoding), with no hex or escape parsing. This holds
+wherever a `bytea` crosses between SQL and Ruby: plain arguments and returns,
+`bytea[]` elements, fields of composite arguments and results, and SPI result
+rows. To emit specific bytes, build the `String` directly, e.g.
+`[0, 255, 16].pack('C*')`.
 
 ## Composite types and records
 

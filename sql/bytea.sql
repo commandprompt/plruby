@@ -1,33 +1,76 @@
 --
--- bytea conversion.  Like every type, a bytea reaches Ruby through its output
--- function, so it arrives as its *textual* (hex) representation -- a String --
--- not as raw bytes.  Returning a bytea feeds the String back through bytea's
--- input function.
+-- bytea conversion.  A bytea is a raw byte string, so it reaches Ruby as a
+-- binary (ASCII-8BIT) String holding its exact bytes -- NUL-safe -- rather than
+-- as its hex text.  Returning a Ruby String into a bytea takes the string's
+-- raw bytes verbatim (any encoding), with no hex/escape parsing.
 --
 SET bytea_output = 'hex';
 
--- A bytea argument is the hex text string (UTF-8 tagged), preserving NUL and
--- high bytes in that representation.
+-- A bytea argument is a binary String; its bytes match the input exactly.
 CREATE FUNCTION b_form(bytea) RETURNS text LANGUAGE plruby AS $$
-    "#{args[0].class}:#{args[0]}"
+    "#{args[0].class}:#{args[0].encoding}:#{args[0].bytesize}"
 $$;
 SELECT b_form('\xdeadbeef'::bytea);
-SELECT b_form('\x00ff01fe'::bytea);
+SELECT b_form('\x00ff01fe'::bytea);           -- NUL and high bytes preserved
+SELECT b_form('\x'::bytea);                    -- empty
 
--- Round-trip: returning the hex string yields the identical bytea.
+-- The bytes are the raw content, so encode() of the echoed value round-trips.
 CREATE FUNCTION b_echo(bytea) RETURNS bytea LANGUAGE plruby AS $$
     args[0]
 $$;
-SELECT b_echo('\x00ff01fe'::bytea);
+SELECT encode(b_echo('\x00ff01fe'::bytea), 'hex');
 
--- Building a bytea from a Ruby-produced hex string.
-CREATE FUNCTION b_make() RETURNS bytea LANGUAGE plruby AS $$
-    "\\x" + [0, 255, 16, 32].map { |n| "%02x" % n }.join
+-- The function can inspect and transform the raw bytes.
+CREATE FUNCTION b_first_byte(bytea) RETURNS int LANGUAGE plruby AS $$
+    args[0].bytes[0]
 $$;
-SELECT b_make();
+SELECT b_first_byte('\x41ff00'::bytea);        -- 65
+
+-- Building a bytea from raw Ruby bytes.
+CREATE FUNCTION b_make() RETURNS bytea LANGUAGE plruby AS $$
+    [0, 255, 16, 32].pack('C*')
+$$;
+SELECT encode(b_make(), 'hex');
+
+-- A Ruby String with embedded NULs becomes those exact bytes.
+CREATE FUNCTION b_nul() RETURNS bytea LANGUAGE plruby AS $$
+    "a\x00b".b
+$$;
+SELECT encode(b_nul(), 'hex');
 
 -- The empty bytea.
 CREATE FUNCTION b_empty() RETURNS bytea LANGUAGE plruby AS $$
-    "\\x"
+    "".b
 $$;
-SELECT b_empty();
+SELECT encode(b_empty(), 'hex');
+
+-- bytea inside a composite: the field is a binary String too.
+CREATE TYPE b_rec AS (tag text, blob bytea);
+CREATE FUNCTION b_rec_in(b_rec) RETURNS int LANGUAGE plruby AS $$
+    args[0]['blob'].bytesize
+$$;
+SELECT b_rec_in(ROW('x', '\x00ff01fe')::b_rec);   -- 4
+
+CREATE FUNCTION b_rec_out() RETURNS b_rec LANGUAGE plruby AS $$
+    {'tag' => 'y', 'blob' => [1, 2, 3].pack('C*')}
+$$;
+SELECT (b_rec_out()).tag, encode((b_rec_out()).blob, 'hex');
+
+-- bytea read back through SPI is also a binary String.
+CREATE FUNCTION b_via_spi() RETURNS int LANGUAGE plruby AS $$
+    r = spi_exec("SELECT '\\x00ff01fe'::bytea AS b")
+    spi_fetch_row(r)['b'].bytesize
+$$;
+SELECT b_via_spi();          -- 4
+
+-- bytea[] arguments arrive as an Array of binary Strings, and a returned
+-- Array of binary Strings becomes a bytea[].
+CREATE FUNCTION b_arr_in(bytea[]) RETURNS int LANGUAGE plruby AS $$
+    args[0].map(&:bytesize).inject(0, :+)
+$$;
+SELECT b_arr_in(ARRAY['\x0000'::bytea, '\xffffff'::bytea]);   -- 5
+
+CREATE FUNCTION b_arr_out() RETURNS bytea[] LANGUAGE plruby AS $$
+    [[0, 255].pack('C*'), [16].pack('C*')]
+$$;
+SELECT encode((b_arr_out())[1], 'hex'), encode((b_arr_out())[2], 'hex');

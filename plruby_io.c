@@ -67,7 +67,7 @@ plruby_transform_fromsql(Oid typid)
 static VALUE
 plruby_array_from_datum_walk(Datum *elems, bool *nulls, int *idx,
 							 int ndims, const int *dims, int depth,
-							 Oid fromsql_fn)
+							 Oid elemtype, Oid fromsql_fn)
 {
 	VALUE		ary = rb_ary_new();
 	int			i;
@@ -78,20 +78,29 @@ plruby_array_from_datum_walk(Datum *elems, bool *nulls, int *idx,
 			rb_ary_push(ary, plruby_array_from_datum_walk(elems, nulls, idx,
 														  ndims, dims,
 														  depth + 1,
-														  fromsql_fn));
+														  elemtype, fromsql_fn));
 		else
 		{
 			if (nulls[*idx])
 				rb_ary_push(ary, Qnil);
-			else
+			else if (OidIsValid(fromsql_fn))
 				rb_ary_push(ary,
 							(VALUE) OidFunctionCall1(fromsql_fn, elems[*idx]));
+			else
+				/* no transform: the only element-wise binary type is bytea */
+				rb_ary_push(ary, plruby_binary_from_datum(elems[*idx], elemtype));
 			(*idx)++;
 		}
 	}
 	return ary;
 }
 
+/*
+ * An array datum -> nested Ruby Array.  When fromsql_fn is valid, each element
+ * converts through that FromSQL transform; when it is InvalidOid, elements
+ * convert per plruby_binary_from_datum (used for bytea[], whose elements are
+ * raw byte strings).
+ */
 VALUE
 plruby_array_from_datum(Datum d, Oid elemtype, Oid fromsql_fn)
 {
@@ -112,7 +121,8 @@ plruby_array_from_datum(Datum d, Oid elemtype, Oid fromsql_fn)
 	deconstruct_array(arr, elemtype, elmlen, elmbyval, elmalign,
 					  &elems, &nulls, &nelems);
 	return plruby_array_from_datum_walk(elems, nulls, &idx,
-										ndims, ARR_DIMS(arr), 0, fromsql_fn);
+										ndims, ARR_DIMS(arr), 0,
+										elemtype, fromsql_fn);
 }
 
 /* ---------------------------------------------------------------------
@@ -222,6 +232,29 @@ plruby_scalar_from_cstring(const char *str, Oid typeoid)
 			/* numeric, text, varchar, everything else: keep as a String */
 			return plruby_str_from_pg(str, strlen(str));
 	}
+}
+
+/*
+ * bytea -> Ruby.  A bytea Datum is a raw varlena, so it maps to a binary
+ * (ASCII-8BIT) Ruby String holding its exact bytes -- NUL-safe -- rather than
+ * through bytea's hex text output.  Returns Qundef when typeoid is not bytea,
+ * so callers can fall back to their normal text path.
+ */
+VALUE
+plruby_binary_from_datum(Datum value, Oid typeoid)
+{
+	struct varlena *vl;
+	VALUE		s;
+
+	if (typeoid != BYTEAOID)
+		return Qundef;
+
+	vl = PG_DETOAST_DATUM_PACKED(value);
+	s = rb_enc_str_new(VARDATA_ANY(vl), VARSIZE_ANY_EXHDR(vl),
+					   rb_ascii8bit_encoding());
+	if ((Pointer) vl != DatumGetPointer(value))
+		pfree(vl);
+	return s;
 }
 
 /* ---------------------------------------------------------------------
@@ -480,6 +513,20 @@ plruby_datum_from_value(VALUE val, Oid typeoid, int32 typmod, bool *isnull)
 		(RB_TYPE_P(val, T_HASH) || RB_TYPE_P(val, T_ARRAY)))
 		return plruby_composite_datum(val, typeoid, typmod);
 
+	/*
+	 * bytea fed a Ruby String: take its raw bytes verbatim (any encoding),
+	 * building the varlena directly rather than parsing hex/escape text.
+	 */
+	if (typeoid == BYTEAOID && RB_TYPE_P(val, T_STRING))
+	{
+		long		len = RSTRING_LEN(val);
+		bytea	   *result = (bytea *) palloc(len + VARHDRSZ);
+
+		SET_VARSIZE(result, len + VARHDRSZ);
+		memcpy(VARDATA(result), RSTRING_PTR(val), len);
+		return PointerGetDatum(result);
+	}
+
 	/* Scalar leaf: convert via the target type's input function. */
 	{
 		char	   *s = plruby_value_to_cstring(val, true, true);
@@ -672,6 +719,16 @@ plruby_hash_from_tuple(HeapTuple tuple, TupleDesc tupdesc)
 			rb_hash_aset(h, rb_str_new_cstr(attname),
 						 plruby_hash_from_tuple(&tmptup, subdesc));
 			ReleaseTupleDesc(subdesc);
+			continue;
+		}
+
+		/* bytea (and bytea[]) map to raw binary Strings, not hex text. */
+		v = plruby_binary_from_datum(attr, att->atttypid);
+		if (v == Qundef && get_element_type(att->atttypid) == BYTEAOID)
+			v = plruby_array_from_datum(attr, BYTEAOID, InvalidOid);
+		if (v != Qundef)
+		{
+			rb_hash_aset(h, rb_str_new_cstr(attname), v);
 			continue;
 		}
 
