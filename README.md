@@ -139,6 +139,7 @@ to roles you would trust with the server's OS account.
 - [Feature comparison: PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl](doc/comparison.md)
 - [PL/Ruby vs PL/Perl](doc/plperl-comparison.md)
 - [PL/Ruby vs PL/Tcl](doc/pltcl-comparison.md)
+- [Why PL/Ruby embeds CRuby (MRI), not mruby](doc/why-not-mruby.md)
 
 ## License
 
