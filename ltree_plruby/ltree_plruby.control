@@ -1,0 +1,6 @@
+# ltree transform for PL/Ruby  (MIT License; see LICENSE)
+comment = 'transform between ltree and Ruby Arrays'
+default_version = '1.0'
+module_pathname = '$libdir/ltree_plruby'
+requires = 'ltree, plruby'
+relocatable = true

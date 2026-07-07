@@ -55,6 +55,8 @@ jobs:
           sudo make -C jsonb_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY" install
           make -C hstore_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY"
           sudo make -C hstore_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY" install
+          make -C ltree_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY"
+          sudo make -C ltree_plruby PG_CONFIG="$PG_CONFIG" RUBY="$RUBY" install
 
       - name: Start a test cluster
         run: |
@@ -79,6 +81,12 @@ jobs:
         env:
           PGPORT: '5555'
 
+      - name: Run the ltree_plruby regression suite
+        run: |
+          make -C ltree_plruby PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config installcheck
+        env:
+          PGPORT: '5555'
+
       - name: Show regression diffs on failure
         if: failure()
         run: |
@@ -88,3 +96,5 @@ jobs:
           cat jsonb_plruby/regression.diffs 2>/dev/null || echo "(none)"
           echo "===== hstore_plruby regression.diffs ====="
           cat hstore_plruby/regression.diffs 2>/dev/null || echo "(none)"
+          echo "===== ltree_plruby regression.diffs ====="
+          cat ltree_plruby/regression.diffs 2>/dev/null || echo "(none)"

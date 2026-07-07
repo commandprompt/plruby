@@ -9,6 +9,13 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`ltree_plruby`**: a companion extension (in `ltree_plruby/`) providing
+  `TRANSFORM FOR TYPE ltree`: opted-in functions receive ltree arguments as a
+  Ruby `Array` of label Strings and may return an `Array` of labels into an
+  ltree result (elements stringified and joined with `.`; the empty ltree is the
+  empty `Array`). Mirrors the in-core `ltree_plpython` transform. Implemented
+  against ltree's public `ltree2text`/`text2ltree` functions, so it needs no
+  ltree headers and works with the packaged ltree on PostgreSQL 11-18.
 - **`$_SD`: per-function static storage.** A `Hash` private to each function that
   persists across calls to that function within a session, the counterpart of
   PL/Python's `SD` (where `$_SHARED` is `GD`). Each function's `$_SD` is
