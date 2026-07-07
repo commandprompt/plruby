@@ -134,6 +134,7 @@ to roles you would trust with the server's OS account.
 
 - [Language reference](doc/plruby.md)
 - [Cookbook: tested recipes](doc/cookbook.md)
+- [Performance benchmarks](doc/benchmark.md)
 - [Installation](INSTALL)
 - [Changelog](CHANGELOG.md)
 - [Feature comparison: PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl](doc/comparison.md)
