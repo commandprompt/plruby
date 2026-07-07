@@ -30,6 +30,7 @@ non-thread-safe embedding).
 - [Quoting helpers](#quoting-helpers)
 - [Messaging: elog and pg_raise](#messaging-elog-and-pg_raise)
 - [Shared data: `$_SHARED`](#shared-data-_shared)
+- [Per-function data: `$_SD`](#per-function-data-_sd)
 - [Session initialization: on_init, modules and start_proc](#session-initialization-on_init-modules-and-start_proc)
 - [Errors and exceptions](#errors-and-exceptions)
 - [Security](#security)
@@ -504,6 +505,24 @@ CREATE FUNCTION get_shared(key text) RETURNS text LANGUAGE plruby AS $$
     $_SHARED[args[0]]
 $$;
 ```
+
+## Per-function data: `$_SD`
+
+`$_SD` is a `Hash` private to each function that persists across calls to that
+function within the same session. Where `$_SHARED` is one `Hash` shared by every
+function (like PL/Python's `GD`), `$_SD` gives each function its own storage
+(like PL/Python's `SD`), which is the natural place to cache a prepared plan or
+other per-function state without risking a name collision with another function:
+
+```sql
+CREATE FUNCTION counter() RETURNS int LANGUAGE plruby AS $$
+    $_SD['n'] = ($_SD['n'] || 0) + 1
+$$;
+```
+
+Each function's `$_SD` is independent, and it is reset when the function is
+recompiled (`CREATE OR REPLACE`). An anonymous `DO` block gets a fresh, empty
+`$_SD` each time it runs; `$_SHARED` remains shared everywhere.
 
 ## Session initialization: on_init, modules and start_proc
 

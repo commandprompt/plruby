@@ -1,0 +1,87 @@
+--
+-- $_SD: a Hash private to each function, persisting across calls to that
+-- function within a session (counterpart of PL/Python's SD; $_SHARED is GD).
+--
+-- Persists across calls to the same function.
+CREATE FUNCTION sd_counter() RETURNS int LANGUAGE plruby AS $$
+    $_SD['n'] = ($_SD['n'] || 0) + 1
+$$;
+SELECT sd_counter();
+ sd_counter 
+------------
+          1
+(1 row)
+
+SELECT sd_counter();
+ sd_counter 
+------------
+          2
+(1 row)
+
+SELECT sd_counter();
+ sd_counter 
+------------
+          3
+(1 row)
+
+-- A different function has its own independent $_SD.
+CREATE FUNCTION sd_counter2() RETURNS int LANGUAGE plruby AS $$
+    $_SD['n'] = ($_SD['n'] || 0) + 1
+$$;
+SELECT sd_counter2();
+ sd_counter2 
+-------------
+           1
+(1 row)
+
+SELECT sd_counter();          -- unaffected by sd_counter2, keeps counting
+ sd_counter 
+------------
+          4
+(1 row)
+
+-- $_SD is distinct from the session-global $_SHARED.
+CREATE FUNCTION sd_vs_shared() RETURNS text LANGUAGE plruby AS $$
+    $_SD['who'] = 'sd'
+    $_SHARED['who'] = 'shared'
+    "sd=#{$_SD['who']} shared=#{$_SHARED['who']}"
+$$;
+SELECT sd_vs_shared();
+    sd_vs_shared     
+---------------------
+ sd=sd shared=shared
+(1 row)
+
+-- CREATE OR REPLACE resets $_SD (it is tied to the compiled function).
+SELECT sd_counter();          -- still climbing before replace
+ sd_counter 
+------------
+          5
+(1 row)
+
+CREATE OR REPLACE FUNCTION sd_counter() RETURNS int LANGUAGE plruby AS $$
+    $_SD['n'] = ($_SD['n'] || 0) + 1
+$$;
+SELECT sd_counter();          -- back to 1 after replace
+ sd_counter 
+------------
+          1
+(1 row)
+
+-- $_SD survives even when a later call in the same function raises.
+CREATE FUNCTION sd_stash_then_fail() RETURNS int LANGUAGE plruby AS $$
+    $_SD['kept'] = 'yes'
+    raise 'deliberate failure'
+$$;
+SELECT sd_stash_then_fail();
+ERROR:  deliberate failure
+CONTEXT:  PL/Ruby function "sd_stash_then_fail"
+CREATE FUNCTION sd_read_kept() RETURNS text LANGUAGE plruby AS $$
+    $_SD['kept'] || 'unset'
+$$;
+SELECT sd_read_kept();        -- its own $_SD: never set 'kept'
+ sd_read_kept 
+--------------
+ unset
+(1 row)
+

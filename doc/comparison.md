@@ -23,6 +23,7 @@ Legend: ✅ supported · ➖ not applicable / different mechanism · ❌ not pro
 | Procedures + transaction control | ✅ `spi_commit`/`spi_rollback` | ✅ | ✅ | ✅ `commit`/`rollback` |
 | Explicit subtransactions | ✅ `subtransaction { }` | ✅ `subtransaction(callable)` | ➖ (`eval`/`spi_exec` traps) | ✅ `subtransaction { }` |
 | Session-shared data | ✅ `$_SHARED` | ✅ `$_SHARED` | ✅ `%_SHARED` | ✅ `GD` |
+| Per-function static data | ✅ `$_SD` | ➖ | ➖ | ➖ |
 | Module autoloading | ✅ `plruby_modules` | ✅ `plphp_modules` | ➖ | ✅ `pltcl_modules` + `unknown` |
 | Start proc | ✅ `plruby.start_proc` | ✅ `plphp.start_proc` | ✅ `plperl.on_init` etc. | ✅ `pltcl.start_proc` |
 | Standard output forwarded to server log | ✅ `puts`/`print` | ✅ | ➖ (`elog`) | ➖ (`elog`) |
