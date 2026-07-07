@@ -477,6 +477,72 @@ plruby_spi_status(VALUE self, VALUE res)
 	return rb_str_new_cstr(SPI_result_code_string(r->status));
 }
 
+/*
+ * Column metadata for a result's tuple descriptor, as parallel Arrays over the
+ * (non-dropped) result columns -- the counterparts of PL/Python's colnames /
+ * coltypes / coltypmods.  A result without a tuple table (a non-SELECT, like a
+ * plain INSERT) has no columns, so each returns an empty Array.
+ */
+typedef enum
+{
+	PLRUBY_COL_NAME,
+	PLRUBY_COL_TYPE,
+	PLRUBY_COL_TYPMOD
+} plruby_col_kind;
+
+static VALUE
+plruby_spi_colmeta(VALUE res, plruby_col_kind kind)
+{
+	plruby_spi_result *r = plruby_get_spi_result(res);
+	VALUE		out = rb_ary_new();
+	TupleDesc	tupdesc;
+	int			i;
+
+	if (r->tuptable == NULL)
+		return out;
+
+	tupdesc = r->tuptable->tupdesc;
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+
+		if (att->attisdropped)
+			continue;
+
+		switch (kind)
+		{
+			case PLRUBY_COL_NAME:
+				rb_ary_push(out, rb_str_new_cstr(NameStr(att->attname)));
+				break;
+			case PLRUBY_COL_TYPE:
+				rb_ary_push(out, UINT2NUM(att->atttypid));
+				break;
+			case PLRUBY_COL_TYPMOD:
+				rb_ary_push(out, INT2NUM(att->atttypmod));
+				break;
+		}
+	}
+	return out;
+}
+
+static VALUE
+plruby_spi_colnames(VALUE self, VALUE res)
+{
+	return plruby_spi_colmeta(res, PLRUBY_COL_NAME);
+}
+
+static VALUE
+plruby_spi_coltypes(VALUE self, VALUE res)
+{
+	return plruby_spi_colmeta(res, PLRUBY_COL_TYPE);
+}
+
+static VALUE
+plruby_spi_coltypmods(VALUE self, VALUE res)
+{
+	return plruby_spi_colmeta(res, PLRUBY_COL_TYPMOD);
+}
+
 static VALUE
 plruby_spi_rewind(VALUE self, VALUE res)
 {
@@ -1277,6 +1343,12 @@ plruby_spi_init(void)
 							  RUBY_METHOD_FUNC(plruby_spi_processed), 1);
 	rb_define_global_function("spi_status",
 							  RUBY_METHOD_FUNC(plruby_spi_status), 1);
+	rb_define_global_function("spi_colnames",
+							  RUBY_METHOD_FUNC(plruby_spi_colnames), 1);
+	rb_define_global_function("spi_coltypes",
+							  RUBY_METHOD_FUNC(plruby_spi_coltypes), 1);
+	rb_define_global_function("spi_coltypmods",
+							  RUBY_METHOD_FUNC(plruby_spi_coltypmods), 1);
 	rb_define_global_function("spi_rewind",
 							  RUBY_METHOD_FUNC(plruby_spi_rewind), 1);
 

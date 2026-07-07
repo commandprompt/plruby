@@ -37,6 +37,7 @@ Legend: ✅ supported · ➖ not applicable / different mechanism · ❌ not pro
 | Iterate rows | `spi_fetch_row` to `Hash`/`nil` | `spi_fetch_row` | `spi_fetchrow` | row loop / `-array` |
 | Stream via cursor | `spi_query`(+block)/`spi_fetchrow`/`spi_cursor_close`, `Cursor#each` | ➖ | `spi_query`/`spi_fetchrow`/`spi_cursor_close` | `spi_exec`/cursors |
 | Rows processed / status / rewind | `spi_processed`/`spi_status`/`spi_rewind` | ✅ same | ➖ (return hash) | ➖ |
+| Result column metadata | `spi_colnames`/`spi_coltypes`/`spi_coltypmods` | ➖ | ➖ | ➖ |
 | Prepare a plan | `spi_prepare(q, types...)` | ✅ same | `spi_prepare` | `spi_prepare` |
 | Execute a plan | `spi_exec_prepared` / `spi_query_prepared` | ✅ same | `spi_exec_prepared`/`spi_query_prepared` | `spi_execp` |
 | Free a plan | `spi_freeplan` | ✅ same | `spi_freeplan` | (auto) |

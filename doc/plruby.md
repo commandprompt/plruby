@@ -339,7 +339,17 @@ Run queries against the current database from within a function:
   rows are exhausted.
 - `spi_processed(result)`: number of rows the query produced.
 - `spi_status(result)`: the SPI status code as a `String`.
+- `spi_colnames(result)`: an `Array` of the result's column names (`String`s).
+- `spi_coltypes(result)`: an `Array` of the columns' type OIDs (`Integer`s);
+  cast one to a name with `oid::regtype` in SQL.
+- `spi_coltypmods(result)`: an `Array` of the columns' type modifiers
+  (`Integer`s), e.g. `14` for `varchar(10)`, or `-1` when none applies.
 - `spi_rewind(result)`: restart iteration from the first row.
+
+The three `spi_col*` accessors are the counterparts of PL/Python's `colnames`,
+`coltypes`, and `coltypmods`; each returns parallel `Array`s over the result
+columns. A result with no tuple set (a non-`SELECT`, such as a plain `INSERT`)
+has no columns, so each returns an empty `Array`.
 
 ```sql
 CREATE FUNCTION sum_series(n integer) RETURNS integer LANGUAGE plruby AS $$
