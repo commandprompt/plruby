@@ -5,6 +5,16 @@ All notable changes to PL/Ruby are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`$_SD`: per-function static storage.** A `Hash` private to each function that
+  persists across calls to that function within a session, the counterpart of
+  PL/Python's `SD` (where `$_SHARED` is `GD`). Each function's `$_SD` is
+  independent and resets when the function is recompiled; an anonymous `DO` block
+  gets a fresh, empty `$_SD` each run.
+
 ## [2.4.0] - 2026-07-06
 
 Feature parity with the sibling PL/php 2.4: an `on_init` hook, the

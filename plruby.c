@@ -109,6 +109,15 @@ static char *plruby_start_proc = NULL;
 static char *plruby_on_init = NULL;
 static bool plruby_session_inited = false;
 
+/*
+ * Per-function static storage.  Maps a function's internal proc name (see
+ * plruby_compile_function) to a Hash that is exposed to the body as $_SD and
+ * persists across calls to that function within the session.  Counterpart of
+ * PL/Python's SD; $_SHARED is the session-global GD.  Entries are dropped when
+ * a function is recompiled, so $_SD resets on CREATE OR REPLACE.
+ */
+static VALUE plruby_sd_table;
+
 /* Forward declarations */
 void		_PG_init(void);
 void		plruby_init(void);
@@ -374,6 +383,10 @@ plruby_init(void)
 	plruby_proc_cache = rb_hash_new();
 	rb_gc_register_address(&plruby_proc_cache);
 
+	plruby_sd_table = rb_hash_new();
+	rb_gc_register_address(&plruby_sd_table);
+	rb_gv_set("$_SD", rb_hash_new());	/* placeholder until a body binds one */
+
 	rb_gc_register_address(&current_srf_binding);
 
 	plruby_spi_init();
@@ -504,6 +517,29 @@ plruby_error_callback(void *arg)
  * Call handler
  * ------------------------------------------------------------------- */
 
+/*
+ * Bind $_SD to this function's private, session-persistent Hash and return the
+ * previous $_SD so the caller can restore it (needed when a body re-enters
+ * PL/Ruby via SPI).  The hash is keyed by the internal proc name, so it is
+ * distinct for every function -- and for a function's trigger vs plain form --
+ * and is dropped when the function is recompiled.
+ */
+static VALUE
+plruby_bind_sd(plruby_proc_desc *desc)
+{
+	VALUE		prev = rb_gv_get("$_SD");
+	VALUE		key = rb_str_new_cstr(desc->proname);
+	VALUE		sd = rb_hash_aref(plruby_sd_table, key);
+
+	if (NIL_P(sd))
+	{
+		sd = rb_hash_new();
+		rb_hash_aset(plruby_sd_table, key, sd);
+	}
+	rb_gv_set("$_SD", sd);
+	return prev;
+}
+
 Datum
 plruby_call_handler(PG_FUNCTION_ARGS)
 {
@@ -537,6 +573,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 		int			save_call_ntrf = plruby_call_ntransforms;
 		plruby_transform_info *save_arg_trf = plruby_arg_transforms;
 		int			save_arg_ntrf = plruby_arg_ntransforms;
+		VALUE		save_sd = rb_gv_get("$_SD");
 		ErrorContextCallback ecb;
 		plruby_error_ctx errctx;
 
@@ -564,6 +601,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, true, false);
 				plruby_call_transforms = desc->transforms;
 				plruby_call_ntransforms = desc->n_transforms;
+				plruby_bind_sd(desc);
 				retval = plruby_trigger_handler(fcinfo, desc);
 			}
 			else if (CALLED_AS_EVENT_TRIGGER(fcinfo))
@@ -571,6 +609,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, false, true);
 				plruby_call_transforms = NULL;
 				plruby_call_ntransforms = 0;
+				plruby_bind_sd(desc);
 				retval = plruby_event_trigger_handler(fcinfo, desc);
 			}
 			else
@@ -578,6 +617,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 				desc = plruby_compile_function(fcinfo->flinfo->fn_oid, false, false);
 				plruby_call_transforms = desc->transforms;
 				plruby_call_ntransforms = desc->n_transforms;
+				plruby_bind_sd(desc);
 				if (desc->retset)
 					retval = plruby_srf_handler(fcinfo, desc);
 				else
@@ -591,6 +631,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 			plruby_call_ntransforms = save_call_ntrf;
 			plruby_arg_transforms = save_arg_trf;
 			plruby_arg_ntransforms = save_arg_ntrf;
+			rb_gv_set("$_SD", save_sd);
 			PG_RE_THROW();
 		}
 		PG_END_TRY();
@@ -600,6 +641,7 @@ plruby_call_handler(PG_FUNCTION_ARGS)
 		plruby_call_ntransforms = save_call_ntrf;
 		plruby_arg_transforms = save_arg_trf;
 		plruby_arg_ntransforms = save_arg_ntrf;
+		rb_gv_set("$_SD", save_sd);
 	}
 
 	return retval;
@@ -1257,6 +1299,10 @@ plruby_compile_function(Oid fnoid, bool is_trigger, bool is_event_trigger)
 				 */
 				rb_hash_delete(plruby_proc_cache,
 							   rb_str_new_cstr(internal_proname));
+
+				/* Reset $_SD too, so a recompile starts with empty storage. */
+				rb_hash_delete(plruby_sd_table,
+							   rb_str_new_cstr(internal_proname));
 			}
 		}
 	}
@@ -1715,6 +1761,7 @@ plruby_inline_handler(PG_FUNCTION_ARGS)
 	StringInfoData src;
 	int			state = 0;
 	VALUE		params[2];
+	VALUE		save_sd;
 	ErrorContextCallback ecb;
 	plruby_error_ctx errctx;
 
@@ -1759,7 +1806,16 @@ plruby_inline_handler(PG_FUNCTION_ARGS)
 
 	params[0] = rb_ary_new();
 	params[1] = INT2NUM(0);
+
+	/*
+	 * An anonymous block has no persistent identity, so $_SD is a fresh empty
+	 * Hash for the duration of the block (matching PL/Python, where a DO block
+	 * gets its own SD that does not survive).  $_SHARED still persists.
+	 */
+	save_sd = rb_gv_get("$_SD");
+	rb_gv_set("$_SD", rb_hash_new());
 	plruby_protected_call(plruby_recv, rb_intern(funcname), 2, params);
+	rb_gv_set("$_SD", save_sd);
 
 	plruby_remove_method(funcname);
 
