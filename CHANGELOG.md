@@ -14,6 +14,11 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
   PL/Python's `SD` (where `$_SHARED` is `GD`). Each function's `$_SD` is
   independent and resets when the function is recompiled; an anonymous `DO` block
   gets a fresh, empty `$_SD` each run.
+- **SPI result column metadata.** `spi_colnames(result)`, `spi_coltypes(result)`,
+  and `spi_coltypmods(result)` return parallel `Array`s of a result's column
+  names, type OIDs, and type modifiers, the counterparts of PL/Python's
+  `colnames` / `coltypes` / `coltypmods`. A non-`SELECT` result returns empty
+  `Array`s.
 
 ### Changed
 
