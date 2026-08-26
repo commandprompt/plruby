@@ -39,3 +39,14 @@ REGRESS = init base types numspecial bytea composite encoding datetime jsonb mis
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+# Release archive for PGXN (https://pgxn.org).  The version is read from
+# META.json so it cannot drift from the distribution metadata; the archive
+# holds the committed tree, so commit (and tag) before building it.
+DIST_VERSION := $(shell grep -m1 '"version"' META.json | sed -e 's/[^0-9.]//g')
+
+.PHONY: dist
+dist:
+	git archive --format=zip --prefix=plruby-$(DIST_VERSION)/ \
+	    -o plruby-$(DIST_VERSION).zip HEAD
+	@echo "wrote plruby-$(DIST_VERSION).zip"

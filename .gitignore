@@ -9,3 +9,6 @@ results/
 regression.diffs
 regression.out
 *.diff
+
+# PGXN release archives
+plruby-*.zip

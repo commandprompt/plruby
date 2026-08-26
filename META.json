@@ -1,0 +1,70 @@
+{
+   "name": "plruby",
+   "abstract": "Ruby as a procedural language for PostgreSQL",
+   "description": "PL/Ruby is a procedural language handler that embeds an MRI Ruby interpreter in the PostgreSQL backend, so functions, set-returning functions, triggers, event triggers, and procedures can be written in Ruby. Arguments and results are converted to and from native Ruby values, including nested Arrays and composites as Hashes, and numeric as a lossless String. Database access is provided through SPI (queries, prepared statements, cursors, transaction control, and subtransactions). The distribution also ships three optional TRANSFORM FOR TYPE extensions for jsonb, hstore, and ltree. PL/Ruby is untrusted: Ruby has no sandbox since 3.0 removed $SAFE, so the extension is superuser-only to install.",
+   "version": "2.5.0",
+   "maintainer": [
+      "Joshua D. Drake <jd@commandprompt.com>"
+   ],
+   "license": "mit",
+   "provides": {
+      "plruby": {
+         "abstract": "Ruby as a procedural language for PostgreSQL",
+         "file": "plruby--2.5.sql",
+         "docfile": "doc/plruby.md",
+         "version": "2.5.0"
+      },
+      "jsonb_plruby": {
+         "abstract": "Transform between jsonb and native Ruby data",
+         "file": "jsonb_plruby/jsonb_plruby--1.0.sql",
+         "version": "1.0.0"
+      },
+      "hstore_plruby": {
+         "abstract": "Transform between hstore and Ruby Hashes",
+         "file": "hstore_plruby/hstore_plruby--1.0.sql",
+         "version": "1.0.0"
+      },
+      "ltree_plruby": {
+         "abstract": "Transform between ltree and Ruby Arrays",
+         "file": "ltree_plruby/ltree_plruby--1.0.sql",
+         "version": "1.0.0"
+      }
+   },
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "11.0.0"
+         }
+      }
+   },
+   "resources": {
+      "homepage": "https://github.com/commandprompt/plruby",
+      "bugtracker": {
+         "web": "https://github.com/commandprompt/plruby/issues"
+      },
+      "repository": {
+         "url": "https://github.com/commandprompt/plruby.git",
+         "web": "https://github.com/commandprompt/plruby",
+         "type": "git"
+      }
+   },
+   "generated_by": "Joshua D. Drake",
+   "tags": [
+      "ruby",
+      "mri",
+      "procedural language",
+      "plruby",
+      "stored procedures",
+      "triggers",
+      "spi",
+      "transform",
+      "jsonb",
+      "hstore",
+      "ltree"
+   ],
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "https://pgxn.org/meta/spec.txt"
+   },
+   "release_status": "stable"
+}
