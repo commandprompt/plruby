@@ -10,6 +10,7 @@
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org/)
 [![Tests](https://img.shields.io/badge/tests-44_passing-brightgreen)](sql/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![PGXN](https://img.shields.io/badge/PGXN-plruby_2.5.0-6d4c9f)](https://pgxn.org/dist/plruby/)
 
 </div>
 
@@ -104,16 +105,29 @@ $$;
 
 ## Installation
 
+From [PGXN](https://pgxn.org/dist/plruby/), with the
+[PGXN client](https://pgxn.github.io/pgxnclient/):
+
+```sh
+pgxn install plruby
+```
+
+Or from a checkout:
+
 ```sh
 make
 sudo make install
 ```
 
-Then, in a database:
+Either way builds from source, so PostgreSQL's server development files and a
+shared-library Ruby have to be present first (see
+[Requirements](#requirements)). Then, in a database:
 
 ```sql
 CREATE EXTENSION plruby;
 ```
+
+`CREATE EXTENSION` requires a superuser, because PL/Ruby is untrusted.
 
 See [**INSTALL**](INSTALL) for details, and run the regression suite with
 `make installcheck`.
@@ -137,6 +151,7 @@ to roles you would trust with the server's OS account.
 - [Performance benchmarks](doc/benchmark.md)
 - [Installation](INSTALL)
 - [Changelog](CHANGELOG.md)
+- [PGXN distribution](https://pgxn.org/dist/plruby/)
 - [Feature comparison: PL/Ruby vs PL/php vs PL/Perl vs PL/Tcl](doc/comparison.md)
 - [PL/Ruby vs PL/Perl](doc/plperl-comparison.md)
 - [PL/Ruby vs PL/Tcl](doc/pltcl-comparison.md)
