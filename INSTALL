@@ -71,3 +71,20 @@ and TRANSFORM FOR TYPE ltree (Ruby Array of label Strings):
 
 All three accept the same PG_CONFIG/RUBY overrides and have their own
 "make installcheck".
+
+6. Packaging for PGXN (maintainers)
+-----------------------------------
+
+META.json describes the distribution for PGXN (https://pgxn.org): its version,
+the four extensions it provides, and where the sources live.  Build the release
+archive from a committed tree with:
+
+    make dist
+
+That writes plruby-<version>.zip, taking the version from META.json, and the
+archive expands into a single plruby-<version>/ directory, which is the shape
+PGXN Manager expects at https://manager.pgxn.org/upload.
+
+When cutting a release, keep the "version" field in META.json in step with
+plruby.control and the CHANGELOG, and the "provides" versions in step with the
+per-extension .control files.
