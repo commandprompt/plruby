@@ -25,6 +25,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Drop the Microsoft apt repository
+        # The hosted runner image ships a packages.microsoft.com source that
+        # this build needs nothing from. Its InRelease fetch fails now and then
+        # ("Clearsigned file isn't valid, got 'NOSPLIT'"), which aborts
+        # apt-get update and kills an otherwise healthy matrix job.
+        run: |
+          stale=$(grep -rlF packages.microsoft.com /etc/apt/sources.list.d \
+                  2>/dev/null || true)
+          if [ -n "$stale" ]; then
+            echo "$stale" | xargs sudo rm -f
+          fi
+
       - name: Install system Ruby
         if: matrix.ruby == 'system'
         run: |
