@@ -27,6 +27,14 @@ links against a shared-library Ruby (MRI).
 2. Build and install
 ---------------------
 
+PL/Ruby is on PGXN (https://pgxn.org/dist/plruby/), so with the PGXN client
+(https://pgxn.github.io/pgxnclient/) the whole build is:
+
+    pgxn install plruby
+
+That downloads the distribution and runs the same PGXS build described here.
+From a checkout, or to pass the overrides below:
+
     make
     sudo make install
 
@@ -41,6 +49,10 @@ Override them if needed:
 ------------------------------------
 
     CREATE EXTENSION plruby;
+
+The PGXN client runs the same statement with:
+
+    pgxn load -d mydb plruby
 
 PL/Ruby is an untrusted language, so the extension is superuser-only to install
 and only superusers can create PL/Ruby functions.  See the SECURITY section of
@@ -72,6 +84,10 @@ and TRANSFORM FOR TYPE ltree (Ruby Array of label Strings):
 All three accept the same PG_CONFIG/RUBY overrides and have their own
 "make installcheck".
 
+"pgxn install plruby" builds only the top-level extension.  To add a transform
+on top of it, unpack the distribution ("pgxn download plruby") or use a
+checkout, and build the subdirectory as above.
+
 6. Packaging for PGXN (maintainers)
 -----------------------------------
 
@@ -83,8 +99,12 @@ archive from a committed tree with:
 
 That writes plruby-<version>.zip, taking the version from META.json, and the
 archive expands into a single plruby-<version>/ directory, which is the shape
-PGXN Manager expects at https://manager.pgxn.org/upload.
+PGXN Manager expects.
+
+Upload it at https://manager.pgxn.org/upload.  A new release shows up
+on master.pgxn.org right away; pgxn.org and api.pgxn.org serve it after their
+next mirror sync, so a 404 there for a short while is expected.
 
 When cutting a release, keep the "version" field in META.json in step with
-plruby.control and the CHANGELOG, and the "provides" versions in step with the
-per-extension .control files.
+plruby.control and the CHANGELOG, the "provides" versions in step with the
+per-extension .control files, and the PGXN badge version in README.
